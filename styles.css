@@ -1,0 +1,415 @@
+:root {
+  color-scheme: light;
+  --background: #f7f8fa;
+  --surface: #ffffff;
+  --text: #17202a;
+  --muted: #5d6d7e;
+  --line: #d7dee8;
+  --accent: #fc4c02;
+  --accent-dark: #c83c02;
+  --success: #156f4a;
+  --error: #a52622;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+  min-width: 320px;
+  background: var(--background);
+  color: var(--text);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  line-height: 1.5;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0;
+}
+
+.intro {
+  max-width: 720px;
+  margin-bottom: 28px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent-dark);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+p {
+  overflow-wrap: anywhere;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: clamp(2rem, 6vw, 4.5rem);
+  line-height: 1;
+}
+
+h2 {
+  margin: 0 0 16px;
+  font-size: 1.15rem;
+}
+
+p {
+  margin: 0;
+}
+
+.panel {
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(140px, 180px) minmax(140px, 180px) auto;
+  gap: 14px;
+  align-items: end;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+}
+
+input,
+select {
+  min-height: 44px;
+  padding: 10px 12px;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+button:focus-visible {
+  outline: 3px solid rgba(252, 76, 2, 0.25);
+  outline-offset: 2px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.button-link {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: white;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  background: var(--accent-dark);
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-dark);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button.secondary {
+  border: 1px solid var(--line);
+  background: #eef3f7;
+  color: var(--text);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: #dde8ef;
+}
+
+.note {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.oauth-help {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+
+.oauth-help h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.oauth-help p {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.lookup-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.7fr);
+  gap: 18px;
+  margin-top: 18px;
+  align-items: start;
+}
+
+.panel-heading {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.panel-heading h2 {
+  margin-bottom: 0;
+}
+
+.recent-list {
+  display: grid;
+  gap: 10px;
+}
+
+.recent-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfd;
+}
+
+.recent-card h3 {
+  margin: 0 0 4px;
+  font-size: 0.98rem;
+  overflow-wrap: anywhere;
+}
+
+.recent-card p,
+.empty-state {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.id-lookup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.status-row {
+  margin: 18px 0;
+  color: var(--muted);
+}
+
+.status-row.success {
+  color: var(--success);
+}
+
+.status-row.error {
+  color: var(--error);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.activity-list {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.activity-card {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfd;
+}
+
+.activity-card h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.activity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.activity-meta span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: #ffffff;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.detail-grid dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.detail-grid dd {
+  margin: 2px 0 0;
+  font-size: 0.98rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.activity-details {
+  margin-top: 14px;
+  min-width: 0;
+}
+
+.activity-details summary {
+  cursor: pointer;
+  color: var(--accent-dark);
+  font-weight: 800;
+}
+
+.mini-table-section {
+  max-width: 100%;
+  margin-top: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mini-table-section h4 {
+  margin: 0 0 6px;
+  font-size: 0.92rem;
+}
+
+table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+th,
+td {
+  max-width: 180px;
+  border-bottom: 1px solid var(--line);
+  padding: 6px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+textarea {
+  display: block;
+  min-height: 520px;
+  max-width: 100%;
+  resize: vertical;
+  padding: 12px;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, ui-monospace,
+    monospace;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 860px) {
+  .controls,
+  .grid,
+  .lookup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .actions,
+  .panel-heading {
+    flex-wrap: wrap;
+  }
+
+  button {
+    flex: 1 1 180px;
+  }
+
+  .id-lookup,
+  .recent-card {
+    grid-template-columns: 1fr;
+  }
+
+  textarea {
+    min-height: 360px;
+  }
+}
