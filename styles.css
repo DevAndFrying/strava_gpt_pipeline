@@ -30,19 +30,20 @@ body {
 button,
 input,
 select,
-textarea {
+textarea,
+pre {
   font: inherit;
 }
 
 .shell {
-  width: min(1120px, calc(100% - 32px));
+  width: min(1440px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 40px 0;
+  padding: clamp(24px, 5vw, 44px) 0;
 }
 
 .intro {
   max-width: 720px;
-  margin-bottom: 28px;
+  margin-bottom: clamp(20px, 4vw, 28px);
 }
 
 .eyebrow {
@@ -62,7 +63,7 @@ p {
 
 h1 {
   margin: 0 0 12px;
-  font-size: clamp(2rem, 6vw, 4.5rem);
+  font-size: clamp(2.1rem, 6vw, 4.5rem);
   line-height: 1;
 }
 
@@ -80,12 +81,12 @@ p {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 20px;
+  padding: clamp(14px, 2.5vw, 20px);
 }
 
 .controls {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(140px, 180px) minmax(140px, 180px) auto;
+  grid-template-columns: minmax(240px, 1fr) minmax(132px, 160px) minmax(132px, 160px) auto;
   gap: 14px;
   align-items: end;
 }
@@ -199,16 +200,24 @@ button.secondary:hover:not(:disabled) {
 
 .lookup-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.7fr);
+  grid-template-columns: minmax(360px, 1fr) minmax(300px, 0.62fr);
   gap: 18px;
   margin-top: 18px;
   align-items: start;
 }
 
+.lookup-panel {
+  height: 100%;
+}
+
+.recent-panel {
+  align-self: start;
+}
+
 .panel-heading {
   display: flex;
   gap: 12px;
-  align-items: start;
+  align-items: end;
   justify-content: space-between;
   margin-bottom: 16px;
 }
@@ -217,39 +226,132 @@ button.secondary:hover:not(:disabled) {
   margin-bottom: 0;
 }
 
+.recent-controls {
+  display: grid;
+  grid-template-columns: 82px auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.recent-controls label {
+  gap: 3px;
+  font-size: 0.78rem;
+}
+
+.recent-controls input {
+  min-height: 36px;
+  padding: 7px 9px;
+}
+
+.recent-controls button {
+  min-height: 36px;
+  padding: 7px 12px;
+}
+
+.recent-list-shell {
+  display: grid;
+  grid-template-areas: "stack";
+}
+
+.recent-list-clip,
+.recent-collapsed-note {
+  grid-area: stack;
+  min-height: 0;
+  transition:
+    max-height 260ms ease,
+    opacity 180ms ease,
+    transform 220ms ease,
+    visibility 0ms linear 0ms;
+}
+
+.recent-list-clip {
+  max-height: 260px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.recent-list-shell.is-collapsed .recent-list-clip {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  visibility: hidden;
+  transition:
+    max-height 260ms ease,
+    opacity 160ms ease,
+    transform 220ms ease,
+    visibility 0ms linear 260ms;
+}
+
+.recent-list-shell.is-expanded .recent-collapsed-note {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(4px);
+  visibility: hidden;
+  transition:
+    max-height 180ms ease,
+    opacity 140ms ease,
+    transform 180ms ease,
+    visibility 0ms linear 180ms;
+}
+
 .recent-list {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .recent-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 12px;
+  padding: 8px 10px;
   background: #fbfcfd;
 }
 
+.recent-card > div {
+  min-width: 0;
+}
+
 .recent-card h3 {
-  margin: 0 0 4px;
-  font-size: 0.98rem;
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 .recent-card p,
-.empty-state {
+.empty-state,
+.recent-collapsed-note {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+}
+
+.recent-collapsed-note {
+  max-height: 48px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfd;
+  transform: translateY(0);
+}
+
+.recent-card button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 0.86rem;
 }
 
 .id-lookup {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: end;
+}
+
+.id-lookup button {
+  justify-self: start;
 }
 
 .status-row {
@@ -267,9 +369,48 @@ button.secondary:hover:not(:disabled) {
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
   gap: 18px;
   align-items: start;
+}
+
+.json-card {
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.json-card.is-copyable {
+  cursor: copy;
+}
+
+.json-card.is-copyable:hover {
+  border-color: rgba(252, 76, 2, 0.6);
+  box-shadow: 0 8px 22px rgba(23, 32, 42, 0.08);
+}
+
+.json-card:focus-visible {
+  outline: 3px solid rgba(252, 76, 2, 0.25);
+  outline-offset: 2px;
+}
+
+.json-card-heading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.json-card-heading h2 {
+  margin-bottom: 0;
+}
+
+.json-card-heading p {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: right;
 }
 
 .activity-list {
@@ -288,6 +429,10 @@ button.secondary:hover:not(:disabled) {
   background: #fbfcfd;
 }
 
+.activity-card + .activity-card {
+  margin-top: 2px;
+}
+
 .activity-card h3 {
   margin: 0 0 8px;
   font-size: 1rem;
@@ -296,7 +441,7 @@ button.secondary:hover:not(:disabled) {
 .activity-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   color: var(--muted);
   font-size: 0.88rem;
 }
@@ -310,9 +455,17 @@ button.secondary:hover:not(:disabled) {
 
 .detail-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
   margin: 14px 0 0;
+}
+
+.detail-grid div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px;
 }
 
 .detail-grid dt {
@@ -331,12 +484,6 @@ button.secondary:hover:not(:disabled) {
 .activity-details {
   margin-top: 14px;
   min-width: 0;
-}
-
-.activity-details summary {
-  cursor: pointer;
-  color: var(--accent-dark);
-  font-weight: 800;
 }
 
 .mini-table-section {
@@ -375,17 +522,25 @@ th {
   text-transform: capitalize;
 }
 
-textarea {
+.json-output {
   display: block;
   min-height: 520px;
   max-width: 100%;
-  resize: vertical;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
   padding: 12px;
   font-family:
     "SFMono-Regular", Consolas, "Liberation Mono", Menlo, ui-monospace,
     monospace;
   font-size: 0.88rem;
   line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 @media (max-width: 860px) {
@@ -396,11 +551,20 @@ textarea {
   }
 
   .actions,
-  .panel-heading {
+  .panel-heading,
+  .json-card-heading {
     flex-wrap: wrap;
   }
 
-  button {
+  .recent-controls {
+    flex: 1 1 100%;
+  }
+
+  .json-card-heading p {
+    text-align: left;
+  }
+
+  .actions button {
     flex: 1 1 180px;
   }
 
@@ -409,7 +573,112 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  textarea {
+  .recent-card button {
+    justify-self: start;
+  }
+
+  .json-output {
     min-height: 360px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .shell {
+    width: min(1680px, calc(100% - 96px));
+    padding-block: 56px;
+  }
+
+  .intro {
+    max-width: 860px;
+    margin-bottom: 34px;
+  }
+
+  .panel {
+    padding: 24px;
+  }
+
+  .controls {
+    grid-template-columns: minmax(360px, 1fr) minmax(150px, 180px) minmax(150px, 180px) auto;
+    gap: 18px;
+  }
+
+  .lookup-grid,
+  .grid {
+    gap: 24px;
+  }
+
+  .lookup-grid {
+    grid-template-columns: minmax(560px, 1fr) minmax(360px, 0.55fr);
+    margin-top: 24px;
+  }
+
+  .grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(520px, 0.65fr);
+  }
+
+  .recent-list-clip {
+    max-height: 300px;
+  }
+
+  .activity-list {
+    gap: 16px;
+  }
+
+  .activity-card {
+    padding: 18px;
+  }
+
+  .detail-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+  }
+
+  .json-output {
+    min-height: 620px;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell {
+    width: min(100% - 24px, 1440px);
+    padding-top: 20px;
+  }
+
+  h1 {
+    font-size: 2rem;
+    line-height: 1.05;
+  }
+
+  .controls,
+  .recent-controls,
+  .id-lookup {
+    gap: 10px;
+  }
+
+  .recent-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .button-link,
+  .id-lookup button,
+  .recent-controls button,
+  .recent-card button {
+    width: 100%;
+  }
+
+  .recent-card {
+    gap: 10px;
+  }
+
+  .activity-card {
+    padding: 12px;
+  }
+
+  .activity-meta span {
+    width: 100%;
+  }
+
+  .detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
