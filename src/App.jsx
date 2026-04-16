@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchActivities,
   fetchActivityDetail,
@@ -18,9 +18,14 @@ const splitColumns = [
   "average_grade_adjusted_speed",
 ];
 
+const recentExpandDelayMs = 1000;
+const recentCollapseDelayMs = 4000;
+const metersToFeet = (meters) => meters * 3.28084;
+
 function App() {
   const [token, setToken] = useState("");
   const [limit, setLimit] = useState(10);
+  const [recentLimit, setRecentLimit] = useState(10);
   const [splitUnits, setSplitUnits] = useState("miles");
   const [activityId, setActivityId] = useState("");
   const [recentActivities, setRecentActivities] = useState([]);
@@ -31,13 +36,24 @@ function App() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingRecent, setIsLoadingRecent] = useState(false);
+  const [isRecentExpanded, setIsRecentExpanded] = useState(true);
   const [pullingActivityId, setPullingActivityId] = useState("");
+  const recentExpandTimer = useRef(null);
+  const recentCollapseTimer = useRef(null);
+  const recentPanelHasFocus = useRef(false);
 
   const summaries = useMemo(
     () => loadedActivities.map((activity) => summarizeActivity(activity, splitUnits)),
     [loadedActivities, splitUnits],
   );
   const jsonOutput = useMemo(() => JSON.stringify(summaries, null, 2), [summaries]);
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(recentExpandTimer.current);
+      clearTimeout(recentCollapseTimer.current);
+    };
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -89,10 +105,17 @@ function App() {
   }
 
   async function handleCopy() {
-    if (!jsonOutput) return;
+    if (summaries.length === 0) return;
 
-    await navigator.clipboard.writeText(jsonOutput);
-    setStatus({ message: "Copied JSON to clipboard.", tone: "success" });
+    try {
+      await navigator.clipboard.writeText(jsonOutput);
+      setStatus({ message: "Copied JSON to clipboard.", tone: "success" });
+    } catch (error) {
+      setStatus({
+        message: "Could not copy JSON automatically. Select the JSON and copy it manually.",
+        tone: "error",
+      });
+    }
   }
 
   function handleSplitUnitsChange(value) {
@@ -108,12 +131,16 @@ function App() {
 
   async function handleLoadRecent() {
     const trimmedToken = token.trim();
+    const requestedLimit = Math.min(Math.max(Number(recentLimit) || 10, 1), 50);
 
     setIsLoadingRecent(true);
-    setStatus({ message: "Fetching last 10 activities...", tone: "" });
+    setStatus({ message: `Fetching last ${requestedLimit} activities...`, tone: "" });
 
     try {
-      const activities = await fetchActivities(trimmedToken, 10);
+      const activities = await fetchActivities(trimmedToken, requestedLimit);
+      clearTimeout(recentExpandTimer.current);
+      clearTimeout(recentCollapseTimer.current);
+      setIsRecentExpanded(true);
       setRecentActivities(activities);
       setStatus({
         message: `Loaded ${activities.length} recent activities.`,
@@ -126,6 +153,47 @@ function App() {
       });
     } finally {
       setIsLoadingRecent(false);
+    }
+  }
+
+  function scheduleRecentExpand() {
+    clearTimeout(recentCollapseTimer.current);
+    clearTimeout(recentExpandTimer.current);
+    recentExpandTimer.current = setTimeout(() => {
+      setIsRecentExpanded(true);
+    }, recentExpandDelayMs);
+  }
+
+  function scheduleRecentCollapse() {
+    clearTimeout(recentExpandTimer.current);
+    clearTimeout(recentCollapseTimer.current);
+
+    if (recentActivities.length === 0 || isLoadingRecent) {
+      return;
+    }
+
+    recentCollapseTimer.current = setTimeout(() => {
+      setIsRecentExpanded(false);
+    }, recentCollapseDelayMs);
+  }
+
+  function handleRecentBlur(event) {
+    if (event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+
+    recentPanelHasFocus.current = false;
+    scheduleRecentCollapse();
+  }
+
+  function handleRecentFocus() {
+    recentPanelHasFocus.current = true;
+    scheduleRecentExpand();
+  }
+
+  function handleRecentMouseLeave() {
+    if (!recentPanelHasFocus.current) {
+      scheduleRecentCollapse();
     }
   }
 
@@ -166,7 +234,7 @@ function App() {
         <p>Fetch recent activities and copy a clean JSON summary you can send in a chat.</p>
       </section>
 
-      <section className="panel" aria-labelledby="setup-title">
+      <section className="panel setup-panel" aria-labelledby="setup-title">
         <h2 id="setup-title">Fetch activities</h2>
         <form className="controls" onSubmit={handleSubmit}>
           <label>
@@ -232,22 +300,47 @@ function App() {
       </section>
 
       <section className="lookup-grid" aria-label="Activity lookup tools">
-        <div className="panel">
+        <div
+          className="panel lookup-panel recent-panel"
+          onFocus={handleRecentFocus}
+          onBlur={handleRecentBlur}
+          onMouseEnter={scheduleRecentExpand}
+          onMouseLeave={handleRecentMouseLeave}
+        >
           <div className="panel-heading">
-            <h2>Last 10 activities</h2>
-            <button type="button" onClick={handleLoadRecent} disabled={isLoadingRecent}>
-              {isLoadingRecent ? "Loading..." : "Load last 10"}
-            </button>
+            <h2>Recent activities</h2>
+            <form
+              className="recent-controls"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleLoadRecent();
+              }}
+            >
+              <label>
+                Count
+                <input
+                  value={recentLimit}
+                  onChange={(event) => setRecentLimit(event.target.value)}
+                  type="number"
+                  min="1"
+                  max="50"
+                />
+              </label>
+              <button type="submit" disabled={isLoadingRecent}>
+                {isLoadingRecent ? "Loading..." : "Load"}
+              </button>
+            </form>
           </div>
           <RecentActivityList
             activities={recentActivities}
             splitUnits={splitUnits}
+            isExpanded={isRecentExpanded || recentActivities.length === 0 || isLoadingRecent}
             pullingActivityId={pullingActivityId}
             onPullActivity={handlePullActivity}
           />
         </div>
 
-        <div className="panel">
+        <div className="panel lookup-panel id-panel">
           <h2>Pull by activity ID</h2>
           <form
             className="id-lookup"
@@ -281,53 +374,106 @@ function App() {
       </section>
 
       <section className="grid" aria-label="Activity results">
-        <div className="panel">
+        <div className="panel activity-panel">
           <h2>Activity cards</h2>
           <ActivityList activities={summaries} />
         </div>
 
-        <div className="panel">
-          <h2>JSON for ChatGPT</h2>
-          <textarea value={jsonOutput} readOnly spellCheck="false" />
-        </div>
+        <JsonOutputCard
+          jsonOutput={jsonOutput}
+          canCopy={summaries.length > 0}
+          onCopy={handleCopy}
+        />
       </section>
     </main>
   );
 }
 
-function RecentActivityList({ activities, splitUnits, pullingActivityId, onPullActivity }) {
+function JsonOutputCard({ jsonOutput, canCopy, onCopy }) {
+  function handleKeyDown(event) {
+    if (!canCopy || (event.key !== "Enter" && event.key !== " ")) {
+      return;
+    }
+
+    event.preventDefault();
+    onCopy();
+  }
+
+  return (
+    <div
+      className={`panel json-card ${canCopy ? "is-copyable" : ""}`.trim()}
+      role="button"
+      tabIndex={canCopy ? 0 : -1}
+      aria-disabled={!canCopy}
+      aria-label="Copy JSON for ChatGPT"
+      onClick={canCopy ? onCopy : undefined}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="json-card-heading">
+        <h2>JSON for ChatGPT</h2>
+        <p>{canCopy ? "Click this card to copy." : "Fetch an activity to create JSON."}</p>
+      </div>
+      <pre className="json-output" aria-label="JSON output">{jsonOutput}</pre>
+    </div>
+  );
+}
+
+function RecentActivityList({
+  activities,
+  splitUnits,
+  isExpanded,
+  pullingActivityId,
+  onPullActivity,
+}) {
   if (activities.length === 0) {
     return <p className="empty-state">No recent activities loaded yet.</p>;
   }
 
   return (
-    <div className="recent-list">
-      {activities.map((activity) => {
-        const id = String(activity.id);
-        const distance = formatDistance(activity.distance, splitUnits);
+    <div className={`recent-list-shell ${isExpanded ? "is-expanded" : "is-collapsed"}`}>
+      <p className="recent-collapsed-note" aria-hidden={isExpanded}>
+        {activities.length} recent activities hidden. Focus here for 1 second to expand.
+      </p>
+      <div className="recent-list-clip" aria-hidden={!isExpanded}>
+        <div className="recent-list">
+          {activities.map((activity) => {
+            const id = String(activity.id);
+            const distance = formatDistance(activity.distance, splitUnits);
+            const startedAt = activity.start_date || activity.start_date_local;
+            const date = startedAt ? formatDate(startedAt) : null;
+            const elevationGain =
+              activity.total_elevation_gain === null ||
+              activity.total_elevation_gain === undefined
+                ? null
+                : Number(metersToFeet(activity.total_elevation_gain).toFixed(0));
 
-        return (
-          <article className="recent-card" key={id}>
-            <div>
-              <h3>{activity.name || "Untitled activity"}</h3>
-              <p>
-                ID: {id}
-                {activity.distance !== null && activity.distance !== undefined
-                  ? ` | ${distance.value} ${distance.unit}`
-                  : ""}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="secondary"
-              disabled={pullingActivityId === id}
-              onClick={() => onPullActivity(id)}
-            >
-              {pullingActivityId === id ? "Pulling..." : "Pull"}
-            </button>
-          </article>
-        );
-      })}
+            return (
+              <article className="recent-card" key={id}>
+                <div>
+                  <h3>{activity.name || "Untitled activity"}</h3>
+                  <p>
+                    ID: {id}
+                    {date ? ` | ${date}` : ""}
+                    {activity.distance !== null && activity.distance !== undefined
+                      ? ` | ${distance.value} ${distance.unit}`
+                      : ""}
+                    {elevationGain !== null ? ` | ${elevationGain} ft gain` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={pullingActivityId === id}
+                  tabIndex={isExpanded ? 0 : -1}
+                  onClick={() => onPullActivity(id)}
+                >
+                  {pullingActivityId === id ? "Pulling..." : "Pull"}
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -398,9 +544,7 @@ function ActivityCard({ activity }) {
       {(activity.splits.length > 0 ||
         activity.best_efforts.length > 0 ||
         activity.segment_efforts.length > 0) && (
-        <details className="activity-details">
-          <summary>Splits and efforts</summary>
-
+        <section className="activity-details" aria-label="Splits and efforts">
           {activity.splits.length > 0 && (
             <MiniTable title="Splits" rows={activity.splits} columns={splitColumns} />
           )}
@@ -410,7 +554,7 @@ function ActivityCard({ activity }) {
           {activity.segment_efforts.length > 0 && (
             <MiniTable title="Segments" rows={activity.segment_efforts} />
           )}
-        </details>
+        </section>
       )}
     </article>
   );

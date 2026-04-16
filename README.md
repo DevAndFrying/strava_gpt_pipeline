@@ -11,6 +11,38 @@ Install dependencies once:
 npm install
 ```
 
+### Configure `.env`
+
+Create a `.env` file in the repo root before fetching Strava data. The
+recommended setup uses your Strava app credentials plus a refresh token:
+
+```dotenv
+STRAVA_CLIENT_ID=your_strava_client_id
+STRAVA_CLIENT_SECRET=your_strava_client_secret
+STRAVA_REFRESH_TOKEN=your_strava_refresh_token
+```
+
+With those three values present, the local server automatically exchanges the
+refresh token for a fresh access token whenever it calls Strava.
+
+To get the initial refresh token:
+
+1. Create or open your Strava API application.
+2. Set its authorization callback domain to `localhost` for local use.
+3. Add `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` to `.env`.
+4. Start the app, then visit `http://localhost:5174/api/authorize`.
+5. Approve the requested scopes, copy the returned `STRAVA_REFRESH_TOKEN` into
+   `.env`, and restart the app.
+
+For a quick test, you can use a short-lived access token instead:
+
+```dotenv
+STRAVA_TOKEN=your_access_token
+```
+
+`STRAVA_ACCESS_TOKEN` is also accepted as an alias. Access tokens expire, so the
+refresh-token setup is more reliable.
+
 Start the app in development mode:
 
 ```bash
@@ -51,10 +83,10 @@ The split unit selector changes split distances and speeds between miles and
 kilometers without refetching. Detailed exports include every split returned by
 Strava for each activity.
 
-Use `Load last 10` to list the most recent activity names and IDs. Each row has
-a `Pull` button that loads that specific activity's detailed stats into the
-cards and JSON output. You can also paste an activity ID into `Pull by activity
-ID` to load one activity directly.
+Use `Recent activities` to choose how many recent activity names and IDs to
+load. Each row has a `Pull` button that loads that specific activity's detailed
+stats into the cards and JSON output. You can also paste an activity ID into
+`Pull by activity ID` to load one activity directly.
 
 ## Token notes
 
@@ -63,14 +95,6 @@ variables. The browser calls the local server, and the local server calls Strava
 
 Do not commit or publish a real Strava token in frontend code. Anyone who can
 load the page source could read it.
-
-You can also use a short-lived token directly:
-
-```bash
-STRAVA_TOKEN=your_access_token node server.js
-```
-
-Strava access tokens expire, so the refresh-token setup is more reliable.
 
 A `401` from Strava means the request reached Strava, but the token was not
 accepted. Check these first:
