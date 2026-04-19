@@ -20,9 +20,13 @@ const splitColumns = [
 
 const recentExpandDelayMs = 1000;
 const recentCollapseDelayMs = 4000;
+const recentCollapseThreshold = 50;
+const actionCooldownMs = 900;
+const statusSuccessDurationMs = 5000;
 const metersToFeet = (meters) => meters * 3.28084;
 
 function App() {
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   const [token, setToken] = useState("");
   const [limit, setLimit] = useState(10);
   const [recentLimit, setRecentLimit] = useState(10);
@@ -34,13 +38,17 @@ function App() {
     message: "No activities loaded yet.",
     tone: "",
   });
+  const [toast, setToast] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingRecent, setIsLoadingRecent] = useState(false);
   const [isRecentExpanded, setIsRecentExpanded] = useState(true);
   const [pullingActivityId, setPullingActivityId] = useState("");
+  const actionLocks = useRef(new Map());
   const recentExpandTimer = useRef(null);
   const recentCollapseTimer = useRef(null);
   const recentPanelHasFocus = useRef(false);
+  const statusTimer = useRef(null);
+  const toastTimer = useRef(null);
 
   const summaries = useMemo(
     () => loadedActivities.map((activity) => summarizeActivity(activity, splitUnits)),
@@ -49,36 +57,102 @@ function App() {
   const jsonOutput = useMemo(() => JSON.stringify(summaries, null, 2), [summaries]);
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    clearTimeout(statusTimer.current);
+
+    if (status.tone === "success" && status.message) {
+      statusTimer.current = setTimeout(() => {
+        setStatus({ message: "", tone: "" });
+      }, statusSuccessDurationMs);
+    }
+
+    return () => {
+      clearTimeout(statusTimer.current);
+    };
+  }, [status]);
+
+  useEffect(() => {
     return () => {
       clearTimeout(recentExpandTimer.current);
       clearTimeout(recentCollapseTimer.current);
+      clearTimeout(statusTimer.current);
+      clearTimeout(toastTimer.current);
     };
   }, []);
 
+  function showToast(nextToast, duration = 3200) {
+    clearTimeout(toastTimer.current);
+    setToast(nextToast);
+
+    if (duration !== null) {
+      toastTimer.current = setTimeout(() => {
+        setToast(null);
+      }, duration);
+    }
+  }
+
+  function beginAction(actionKey) {
+    const now = Date.now();
+    const lock = actionLocks.current.get(actionKey);
+
+    if (lock?.inFlight || (lock && now - lock.lastStartedAt < actionCooldownMs)) {
+      return false;
+    }
+
+    actionLocks.current.set(actionKey, { inFlight: true, lastStartedAt: now });
+    return true;
+  }
+
+  function endAction(actionKey) {
+    const lock = actionLocks.current.get(actionKey);
+
+    if (lock) {
+      actionLocks.current.set(actionKey, {
+        inFlight: false,
+        lastStartedAt: lock.lastStartedAt,
+      });
+    }
+  }
+
+  function toggleTheme() {
+    setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
+
+    if (!beginAction("fetch-activities")) return;
 
     const trimmedToken = token.trim();
     const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
 
     setIsLoading(true);
     setLoadedActivities([]);
-    setStatus({ message: "Fetching activities from Strava...", tone: "" });
+    showToast(
+      { message: "Fetching activities from Strava...", tone: "", isLoading: true },
+      null,
+    );
 
     try {
       const activities = await fetchActivities(trimmedToken, requestedLimit);
       let sourceActivities = activities;
 
       if (!trimmedToken && activities.length > 0) {
-        setStatus({
+        showToast({
           message: `Loaded ${activities.length} activities. Fetching detailed stats...`,
           tone: "",
-        });
+          isLoading: true,
+        }, null);
         sourceActivities = await fetchActivityDetails(activities, (current, total, name) => {
-          setStatus({
+          showToast({
             message: `Fetching detailed stats ${current}/${total}: ${name}`,
             tone: "",
-          });
+            isLoading: true,
+          }, null);
         });
       }
 
@@ -89,6 +163,14 @@ function App() {
           : `Loaded detailed stats for ${sourceActivities.length} activities.`,
         tone: "success",
       });
+      showToast(
+        {
+          message: trimmedToken
+            ? `Loaded summary stats for ${sourceActivities.length} activities.`
+            : `Loaded detailed stats for ${sourceActivities.length} activities.`,
+          tone: "success",
+        },
+      );
     } catch (error) {
       const corsHint =
         error instanceof TypeError
@@ -99,22 +181,30 @@ function App() {
         message: `${error.message || "Could not fetch activities."}${corsHint}`,
         tone: "error",
       });
+      showToast({
+        message: `${error.message || "Could not fetch activities."}${corsHint}`,
+        tone: "error",
+      });
     } finally {
       setIsLoading(false);
+      endAction("fetch-activities");
     }
   }
 
   async function handleCopy() {
     if (summaries.length === 0) return;
+    if (!beginAction("copy-json")) return;
 
     try {
       await navigator.clipboard.writeText(jsonOutput);
-      setStatus({ message: "Copied JSON to clipboard.", tone: "success" });
+      showToast({ message: "Copied JSON to clipboard.", tone: "success" });
     } catch (error) {
-      setStatus({
+      showToast({
         message: "Could not copy JSON automatically. Select the JSON and copy it manually.",
         tone: "error",
       });
+    } finally {
+      endAction("copy-json");
     }
   }
 
@@ -130,11 +220,16 @@ function App() {
   }
 
   async function handleLoadRecent() {
+    if (!beginAction("load-recent")) return;
+
     const trimmedToken = token.trim();
     const requestedLimit = Math.min(Math.max(Number(recentLimit) || 10, 1), 50);
 
     setIsLoadingRecent(true);
-    setStatus({ message: `Fetching last ${requestedLimit} activities...`, tone: "" });
+    showToast(
+      { message: `Fetching last ${requestedLimit} activities...`, tone: "", isLoading: true },
+      null,
+    );
 
     try {
       const activities = await fetchActivities(trimmedToken, requestedLimit);
@@ -146,17 +241,28 @@ function App() {
         message: `Loaded ${activities.length} recent activities.`,
         tone: "success",
       });
+      showToast({ message: `Loaded ${activities.length} recent activities.`, tone: "success" });
     } catch (error) {
       setStatus({
         message: error.message || "Could not fetch recent activities.",
         tone: "error",
       });
+      showToast({
+        message: error.message || "Could not fetch recent activities.",
+        tone: "error",
+      });
     } finally {
       setIsLoadingRecent(false);
+      endAction("load-recent");
     }
   }
 
   function scheduleRecentExpand() {
+    if (recentActivities.length <= recentCollapseThreshold) {
+      setIsRecentExpanded(true);
+      return;
+    }
+
     clearTimeout(recentCollapseTimer.current);
     clearTimeout(recentExpandTimer.current);
     recentExpandTimer.current = setTimeout(() => {
@@ -168,7 +274,8 @@ function App() {
     clearTimeout(recentExpandTimer.current);
     clearTimeout(recentCollapseTimer.current);
 
-    if (recentActivities.length === 0 || isLoadingRecent) {
+    if (recentActivities.length <= recentCollapseThreshold || isLoadingRecent) {
+      setIsRecentExpanded(true);
       return;
     }
 
@@ -202,11 +309,18 @@ function App() {
 
     if (!/^\d+$/.test(normalizedId)) {
       setStatus({ message: "Enter a numeric Strava activity ID.", tone: "error" });
+      showToast({ message: "Enter a numeric Strava activity ID.", tone: "error" });
       return;
     }
 
+    const actionKey = `pull-activity-${normalizedId}`;
+    if (!beginAction(actionKey)) return;
+
     setPullingActivityId(normalizedId);
-    setStatus({ message: `Fetching activity ${normalizedId}...`, tone: "" });
+    showToast(
+      { message: `Fetching activity ${normalizedId}...`, tone: "", isLoading: true },
+      null,
+    );
 
     try {
       const detail = await fetchActivityDetail(normalizedId);
@@ -216,18 +330,38 @@ function App() {
         message: `Loaded detailed stats for activity ${normalizedId}.`,
         tone: "success",
       });
+      showToast({
+        message: `Loaded detailed stats for activity ${normalizedId}.`,
+        tone: "success",
+      });
     } catch (error) {
       setStatus({
         message: error.message || `Could not fetch activity ${normalizedId}.`,
         tone: "error",
       });
+      showToast({
+        message: error.message || `Could not fetch activity ${normalizedId}.`,
+        tone: "error",
+      });
     } finally {
       setPullingActivityId("");
+      endAction(actionKey);
     }
   }
 
   return (
     <main className="shell">
+      <div className="top-bar">
+        <button
+          type="button"
+          className="theme-toggle"
+          aria-pressed={theme === "dark"}
+          onClick={toggleTheme}
+        >
+          {theme === "dark" ? "Light mode" : "Dark mode"}
+        </button>
+      </div>
+
       <section className="intro">
         <p className="eyebrow">Strava API</p>
         <h1>Activity export for ChatGPT</h1>
@@ -334,7 +468,11 @@ function App() {
           <RecentActivityList
             activities={recentActivities}
             splitUnits={splitUnits}
-            isExpanded={isRecentExpanded || recentActivities.length === 0 || isLoadingRecent}
+            isExpanded={
+              isRecentExpanded ||
+              recentActivities.length <= recentCollapseThreshold ||
+              isLoadingRecent
+            }
             pullingActivityId={pullingActivityId}
             onPullActivity={handlePullActivity}
           />
@@ -369,9 +507,11 @@ function App() {
         </div>
       </section>
 
-      <section className={`status-row ${status.tone}`.trim()} aria-live="polite">
-        <p>{status.message}</p>
-      </section>
+      {status.message && (
+        <section className={`status-row ${status.tone}`.trim()} aria-live="polite">
+          <p>{status.message}</p>
+        </section>
+      )}
 
       <section className="grid" aria-label="Activity results">
         <div className="panel activity-panel">
@@ -385,7 +525,27 @@ function App() {
           onCopy={handleCopy}
         />
       </section>
+      <Toast toast={toast} />
     </main>
+  );
+}
+
+function Toast({ toast }) {
+  if (!toast) return null;
+
+  return (
+    <div
+      className={`toast ${toast.tone || ""} ${toast.isLoading ? "is-loading" : ""}`.trim()}
+      role="status"
+      aria-live="polite"
+    >
+      <p>{toast.message}</p>
+      {toast.isLoading && (
+        <div className="toast-loading-bar" aria-hidden="true">
+          <span />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -413,7 +573,9 @@ function JsonOutputCard({ jsonOutput, canCopy, onCopy }) {
         <h2>JSON for ChatGPT</h2>
         <p>{canCopy ? "Click this card to copy." : "Fetch an activity to create JSON."}</p>
       </div>
-      <pre className="json-output" aria-label="JSON output">{jsonOutput}</pre>
+      {canCopy && (
+        <pre className="json-output" aria-label="JSON output">{jsonOutput}</pre>
+      )}
     </div>
   );
 }
@@ -439,6 +601,8 @@ function RecentActivityList({
           {activities.map((activity) => {
             const id = String(activity.id);
             const distance = formatDistance(activity.distance, splitUnits);
+            const hasDistance = activity.distance !== null && activity.distance !== undefined;
+            const sport = activity.sport_type || activity.type || "Activity";
             const startedAt = activity.start_date || activity.start_date_local;
             const date = startedAt ? formatDate(startedAt) : null;
             const elevationGain =
@@ -451,12 +615,17 @@ function RecentActivityList({
               <article className="recent-card" key={id}>
                 <div>
                   <h3>{activity.name || "Untitled activity"}</h3>
+                  <div className="recent-primary-meta">
+                    <span>{sport}</span>
+                    {hasDistance && (
+                      <span>
+                        {distance.value} {distance.unit}
+                      </span>
+                    )}
+                  </div>
                   <p>
                     ID: {id}
                     {date ? ` | ${date}` : ""}
-                    {activity.distance !== null && activity.distance !== undefined
-                      ? ` | ${distance.value} ${distance.unit}`
-                      : ""}
                     {elevationGain !== null ? ` | ${elevationGain} ft gain` : ""}
                   </p>
                 </div>
@@ -510,7 +679,13 @@ function ActivityCard({ activity }) {
     ["Calories", activity.calories],
     ["Avg HR", activity.average_heartrate],
     ["Max HR", activity.max_heartrate],
-    ["Avg cadence", activity.average_cadence],
+    ["Cadence", activity.cadence],
+    [
+      "Stride length",
+      activity.stride_length_meters !== null && activity.stride_length_meters !== undefined
+        ? `${activity.stride_length_meters} m / ${activity.stride_length_feet} ft`
+        : null,
+    ],
     ["Avg watts", activity.average_watts],
     ["Weighted watts", activity.weighted_average_watts],
     ["KJ", activity.kilojoules],
