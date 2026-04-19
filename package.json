@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "NODE_ENV=development node server.js",
+    "dev": "NODE_ENV=development node --watch server.js",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0"
   },

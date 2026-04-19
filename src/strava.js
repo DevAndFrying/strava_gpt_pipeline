@@ -1,6 +1,7 @@
 const metersToMiles = (meters) => meters / 1609.344;
 const metersToKilometers = (meters) => meters / 1000;
 const metersToFeet = (meters) => meters * 3.28084;
+const footSportTypes = new Set(["Run", "TrailRun", "VirtualRun", "Walk", "Hike"]);
 
 export function formatHeartRate(value) {
   return value === null || value === undefined ? null : Number(Number(value).toFixed(2));
@@ -26,6 +27,59 @@ export function formatDuration(seconds) {
   }
 
   return `${minutes}m ${remainingSeconds}s`;
+}
+
+function isFootSport(activity) {
+  return footSportTypes.has(activity.sport_type || activity.type);
+}
+
+function formatCadence(activity) {
+  if (activity.average_cadence === null || activity.average_cadence === undefined) {
+    return null;
+  }
+
+  const cadence = Number(activity.average_cadence);
+
+  if (!Number.isFinite(cadence)) {
+    return null;
+  }
+
+  if (isFootSport(activity)) {
+    return `${Number((cadence * 2).toFixed(1))} spm`;
+  }
+
+  return `${Number(cadence.toFixed(1))} rpm`;
+}
+
+function calculateStrideLength(activity) {
+  const cadence = Number(activity.average_cadence);
+  const distance = Number(activity.distance);
+  const movingTime = Number(activity.moving_time);
+
+  if (
+    !isFootSport(activity) ||
+    !Number.isFinite(cadence) ||
+    !Number.isFinite(distance) ||
+    !Number.isFinite(movingTime) ||
+    cadence <= 0 ||
+    distance <= 0 ||
+    movingTime <= 0
+  ) {
+    return null;
+  }
+
+  const steps = cadence * 2 * (movingTime / 60);
+
+  if (steps <= 0) {
+    return null;
+  }
+
+  const meters = distance / steps;
+
+  return {
+    meters: Number(meters.toFixed(2)),
+    feet: Number(metersToFeet(meters).toFixed(2)),
+  };
 }
 
 export function formatDate(value) {
@@ -87,6 +141,7 @@ export function summarizeActivity(activity, splitUnits) {
         average_heartrate: formatHeartRate(effort.average_heartrate),
       }))
     : [];
+  const strideLength = calculateStrideLength(activity);
 
   return {
     id: activity.id,
@@ -105,6 +160,9 @@ export function summarizeActivity(activity, splitUnits) {
     perceived_exertion: activity.perceived_exertion ?? null,
     suffer_score: activity.suffer_score ?? null,
     average_cadence: activity.average_cadence ?? null,
+    cadence: formatCadence(activity),
+    stride_length_meters: strideLength?.meters ?? null,
+    stride_length_feet: strideLength?.feet ?? null,
     average_watts: activity.average_watts ?? null,
     weighted_average_watts: activity.weighted_average_watts ?? null,
     max_watts: activity.max_watts ?? null,
@@ -186,6 +244,34 @@ export async function fetchActivityDetails(activities, onProgress) {
   }
 
   return details;
+}
+
+export async function fetchStravaSettings() {
+  const response = await fetch("/api/settings");
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throwResponseError(response, data);
+  }
+
+  return data;
+}
+
+export async function saveStravaSettings(settings) {
+  const response = await fetch("/api/settings", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(settings),
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throwResponseError(response, data);
+  }
+
+  return data;
 }
 
 export function formatApiErrorDetails(data) {
