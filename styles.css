@@ -20,6 +20,8 @@
   --error-bg: #fff7f7;
   --shadow: rgba(23, 32, 42, 0.06);
   --shadow-strong: rgba(23, 32, 42, 0.18);
+  --panel-padding: clamp(14px, 2.5vw, 20px);
+  --card-padding: 14px;
 }
 
 :root[data-theme="dark"] {
@@ -135,7 +137,7 @@ p {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: clamp(14px, 2.5vw, 20px);
+  padding: var(--panel-padding);
 }
 
 .controls {
@@ -250,6 +252,18 @@ button.secondary:hover:not(:disabled) {
   margin-bottom: 12px;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.credential-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin: 14px 0 10px;
+}
+
+.credential-status {
+  margin-bottom: 12px;
 }
 
 .lookup-grid {
@@ -439,6 +453,15 @@ button.secondary:hover:not(:disabled) {
   box-shadow: 0 8px 18px var(--shadow);
 }
 
+.status-row.is-hidden {
+  height: 0;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+  visibility: hidden;
+}
+
 .status-row.success {
   border-color: rgba(21, 111, 74, 0.28);
   background: var(--success-bg);
@@ -571,7 +594,7 @@ button.secondary:hover:not(:disabled) {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 14px;
+  padding: var(--card-padding);
   background: var(--surface-raised);
 }
 
@@ -671,7 +694,7 @@ th {
 .json-output {
   display: block;
   flex: 1 1 0;
-  min-height: 0;
+  min-height: 160px;
   max-width: 100%;
   margin: 0;
   overflow: auto;
@@ -679,7 +702,7 @@ th {
   border-radius: 8px;
   background: var(--field);
   color: var(--text);
-  padding: 12px;
+  padding: var(--card-padding);
   font-family:
     "SFMono-Regular", Consolas, "Liberation Mono", Menlo, ui-monospace,
     monospace;
@@ -692,6 +715,7 @@ th {
 
 @media (max-width: 860px) {
   .controls,
+  .credential-form,
   .grid,
   .lookup-grid {
     grid-template-columns: 1fr;
@@ -736,6 +760,11 @@ th {
 }
 
 @media (min-width: 1440px) {
+  :root {
+    --panel-padding: 24px;
+    --card-padding: 18px;
+  }
+
   .shell {
     width: min(1680px, calc(100% - 96px));
     padding-block: 56px;
@@ -744,10 +773,6 @@ th {
   .intro {
     max-width: 860px;
     margin-bottom: 34px;
-  }
-
-  .panel {
-    padding: 24px;
   }
 
   .controls {
@@ -777,10 +802,6 @@ th {
     gap: 16px;
   }
 
-  .activity-card {
-    padding: 18px;
-  }
-
   .detail-grid {
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 10px;
@@ -789,6 +810,11 @@ th {
 }
 
 @media (max-width: 560px) {
+  :root {
+    --panel-padding: 14px;
+    --card-padding: 12px;
+  }
+
   .shell {
     width: min(100% - 24px, 1440px);
     padding-top: 20px;
@@ -818,10 +844,6 @@ th {
 
   .recent-card {
     gap: 10px;
-  }
-
-  .activity-card {
-    padding: 12px;
   }
 
   .activity-meta span {

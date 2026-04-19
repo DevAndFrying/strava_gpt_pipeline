@@ -246,6 +246,34 @@ export async function fetchActivityDetails(activities, onProgress) {
   return details;
 }
 
+export async function fetchStravaSettings() {
+  const response = await fetch("/api/settings");
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throwResponseError(response, data);
+  }
+
+  return data;
+}
+
+export async function saveStravaSettings(settings) {
+  const response = await fetch("/api/settings", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(settings),
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throwResponseError(response, data);
+  }
+
+  return data;
+}
+
 export function formatApiErrorDetails(data) {
   const details = [];
 

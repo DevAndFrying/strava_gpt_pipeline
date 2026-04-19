@@ -11,28 +11,30 @@ Install dependencies once:
 npm install
 ```
 
-### Configure `.env`
+### Configure Strava app credentials
 
-Create a `.env` file in the repo root before fetching Strava data. The
-recommended setup uses your Strava app credentials plus a refresh token:
+The easiest setup is to enter your Strava app credentials in the app:
+
+1. Start the app.
+2. Paste your Strava client ID and client secret into `Strava app settings`.
+3. Click `Save Strava settings`.
+4. Click `Authorize with Strava`.
+5. Approve the requested scopes, then return to the app and fetch activities.
+
+The local server saves credentials and the returned refresh token to
+`.strava-auth.json`, which is ignored by git. The client secret stays on the
+local server. The browser does not store it in localStorage.
+
+You can still use `.env` if you prefer environment variables:
 
 ```dotenv
 STRAVA_CLIENT_ID=your_strava_client_id
 STRAVA_CLIENT_SECRET=your_strava_client_secret
-STRAVA_REFRESH_TOKEN=your_strava_refresh_token
 ```
 
-With those three values present, the local server automatically exchanges the
-refresh token for a fresh access token whenever it calls Strava.
-
-To get the initial refresh token:
-
-1. Create or open your Strava API application.
-2. Set its authorization callback domain to `localhost` for local use.
-3. Add `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` to `.env`.
-4. Start the app, then visit `http://localhost:5174/api/authorize`.
-5. Approve the requested scopes, copy the returned `STRAVA_REFRESH_TOKEN` into
-   `.env`, and restart the app.
+Environment variables take precedence over `.strava-auth.json`. You can also
+set `STRAVA_REFRESH_TOKEN` in `.env`, though the app authorization flow usually
+handles that for you.
 
 For a quick test, you can use a short-lived access token instead:
 
@@ -74,10 +76,10 @@ http://localhost:5174
 
 Choose how many activities to request and click `Fetch from Strava`.
 
-When you leave the token field blank, the app uses the local server credentials
-and fetches detailed stats for each returned activity. That uses one request for
-the activity list plus one request per activity, so a limit of `10` uses `11`
-Strava API requests.
+When you leave the token field blank, the app uses the local server
+authorization and fetches detailed stats for each returned activity. That uses
+one request for the activity list plus one request per activity, so a limit of
+`10` uses `11` Strava API requests.
 
 The split unit selector changes split distances and speeds between miles and
 kilometers without refetching. Detailed exports include every split returned by

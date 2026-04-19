@@ -5,6 +5,8 @@ import {
   fetchActivityDetails,
   formatDistance,
   formatDate,
+  fetchStravaSettings,
+  saveStravaSettings,
   summarizeActivity,
 } from "./strava.js";
 
@@ -32,6 +34,9 @@ function App() {
   const [recentLimit, setRecentLimit] = useState(10);
   const [splitUnits, setSplitUnits] = useState("miles");
   const [activityId, setActivityId] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [settingsSummary, setSettingsSummary] = useState(null);
   const [recentActivities, setRecentActivities] = useState([]);
   const [loadedActivities, setLoadedActivities] = useState([]);
   const [status, setStatus] = useState({
@@ -41,6 +46,7 @@ function App() {
   const [toast, setToast] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingRecent, setIsLoadingRecent] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isRecentExpanded, setIsRecentExpanded] = useState(true);
   const [pullingActivityId, setPullingActivityId] = useState("");
   const actionLocks = useRef(new Map());
@@ -84,6 +90,17 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    fetchStravaSettings()
+      .then((settings) => {
+        setSettingsSummary(settings);
+        setClientId(settings.client_id || "");
+      })
+      .catch(() => {
+        setSettingsSummary(null);
+      });
+  }, []);
+
   function showToast(nextToast, duration = 3200) {
     clearTimeout(toastTimer.current);
     setToast(nextToast);
@@ -120,6 +137,35 @@ function App() {
 
   function toggleTheme() {
     setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
+  }
+
+  async function handleSaveSettings(event) {
+    event.preventDefault();
+
+    if (!beginAction("save-settings")) return;
+
+    const trimmedClientId = clientId.trim();
+    const trimmedClientSecret = clientSecret.trim();
+
+    setIsSavingSettings(true);
+
+    try {
+      const settings = await saveStravaSettings({
+        client_id: trimmedClientId,
+        client_secret: trimmedClientSecret,
+      });
+      setSettingsSummary(settings);
+      setClientSecret("");
+      showToast({ message: "Saved Strava app settings.", tone: "success" });
+    } catch (error) {
+      showToast({
+        message: error.message || "Could not save Strava app settings.",
+        tone: "error",
+      });
+    } finally {
+      setIsSavingSettings(false);
+      endAction("save-settings");
+    }
   }
 
   async function handleSubmit(event) {
@@ -420,13 +466,48 @@ function App() {
         </form>
 
         <p className="note">
-          Leave the token blank to use the local server env vars. Paste a token only for a
+          Leave the token blank to use the local server authorization. Paste a token only for a
           one-off browser request.
         </p>
 
         <div className="oauth-help">
           <h3>Need activity permission?</h3>
-          <p>Authorize this app with Strava, then copy the new refresh token into your .env file.</p>
+          <p>Authorize this app with Strava once, then return here and fetch activities.</p>
+          <form className="credential-form" onSubmit={handleSaveSettings}>
+            <label>
+              Strava client ID
+              <input
+                value={clientId}
+                onChange={(event) => setClientId(event.target.value)}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="From your Strava API app"
+              />
+            </label>
+            <label>
+              Strava client secret
+              <input
+                value={clientSecret}
+                onChange={(event) => setClientSecret(event.target.value)}
+                type="password"
+                autoComplete="off"
+                placeholder={
+                  settingsSummary?.has_client_secret
+                    ? "Saved locally; enter a new value to replace it"
+                    : "From your Strava API app"
+                }
+              />
+            </label>
+            <button type="submit" className="secondary" disabled={isSavingSettings}>
+              {isSavingSettings ? "Saving..." : "Save Strava settings"}
+            </button>
+          </form>
+          <p className="credential-status">
+            {settingsSummary?.has_client_id && settingsSummary?.has_client_secret
+              ? "Strava app settings are saved locally."
+              : "Save your Strava app settings before authorizing."}
+            {settingsSummary?.has_refresh_token ? " Activity permission is connected." : ""}
+          </p>
           <a className="button-link" href="/api/authorize">
             Authorize with Strava
           </a>
@@ -507,11 +588,13 @@ function App() {
         </div>
       </section>
 
-      {status.message && (
-        <section className={`status-row ${status.tone}`.trim()} aria-live="polite">
-          <p>{status.message}</p>
-        </section>
-      )}
+      <section
+        className={`status-row ${status.tone} ${status.message ? "" : "is-hidden"}`.trim()}
+        aria-live="polite"
+        aria-hidden={!status.message}
+      >
+        <p>{status.message || "Status"}</p>
+      </section>
 
       <section className="grid" aria-label="Activity results">
         <div className="panel activity-panel">

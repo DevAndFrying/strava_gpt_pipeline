@@ -7,6 +7,7 @@ const port = Number(process.env.PORT || 5174);
 const root = __dirname;
 const staticRoot = fsSync.existsSync(path.join(root, "dist")) ? path.join(root, "dist") : root;
 const isDevelopment = process.env.NODE_ENV === "development";
+const localAuthPath = path.join(root, ".strava-auth.json");
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -68,10 +69,44 @@ function sendHtml(response, statusCode, body) {
   response.end(body);
 }
 
+function loadLocalAuth() {
+  if (!fsSync.existsSync(localAuthPath)) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(fsSync.readFileSync(localAuthPath, "utf8"));
+  } catch (error) {
+    return {};
+  }
+}
+
+async function saveLocalAuth(auth) {
+  const nextPath = `${localAuthPath}.tmp`;
+
+  await fs.writeFile(nextPath, `${JSON.stringify(auth, null, 2)}\n`, {
+    mode: 0o600,
+  });
+  await fs.rename(nextPath, localAuthPath);
+  await fs.chmod(localAuthPath, 0o600);
+}
+
+function getRefreshToken() {
+  return process.env.STRAVA_REFRESH_TOKEN || loadLocalAuth().refresh_token;
+}
+
+function getClientId() {
+  return process.env.STRAVA_CLIENT_ID || loadLocalAuth().client_id;
+}
+
+function getClientSecret() {
+  return process.env.STRAVA_CLIENT_SECRET || loadLocalAuth().client_secret;
+}
+
 async function getAccessToken() {
-  const clientId = process.env.STRAVA_CLIENT_ID;
-  const clientSecret = process.env.STRAVA_CLIENT_SECRET;
-  const refreshToken = process.env.STRAVA_REFRESH_TOKEN;
+  const clientId = getClientId();
+  const clientSecret = getClientSecret();
+  const refreshToken = getRefreshToken();
 
   if (clientId && clientSecret && refreshToken) {
     return refreshAccessToken(clientId, clientSecret, refreshToken);
@@ -85,7 +120,7 @@ async function getAccessToken() {
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error(
-      "Set STRAVA_TOKEN, or set STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, and STRAVA_REFRESH_TOKEN.",
+      "Set Strava app settings in the app, authorize with Strava, or set STRAVA_TOKEN.",
     );
   }
 }
@@ -114,16 +149,22 @@ async function refreshAccessToken(clientId, clientSecret, refreshToken) {
     throw new Error("Token refresh succeeded but no access token was returned.");
   }
 
+  if (data.refresh_token && data.refresh_token !== refreshToken) {
+    const existingAuth = loadLocalAuth();
+    process.env.STRAVA_REFRESH_TOKEN = data.refresh_token;
+    await saveLocalAuth({
+      ...existingAuth,
+      refresh_token: data.refresh_token,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
   return data.access_token;
 }
 
 function getCredentialMode() {
-  if (
-    process.env.STRAVA_CLIENT_ID &&
-    process.env.STRAVA_CLIENT_SECRET &&
-    process.env.STRAVA_REFRESH_TOKEN
-  ) {
-    return "refresh token";
+  if (getClientId() && getClientSecret() && getRefreshToken()) {
+    return process.env.STRAVA_REFRESH_TOKEN ? "refresh token" : "stored refresh token";
   }
 
   if (process.env.STRAVA_TOKEN || process.env.STRAVA_ACCESS_TOKEN) {
@@ -138,14 +179,24 @@ function getRedirectUri(request) {
   return `http://${host}/oauth/callback`;
 }
 
+function redirectHome(response, params = {}) {
+  const searchParams = new URLSearchParams(params);
+  const location = searchParams.size > 0 ? `/?${searchParams}` : "/";
+
+  response.writeHead(302, {
+    Location: location,
+  });
+  response.end();
+}
+
 function handleAuthorize(request, response) {
-  const clientId = process.env.STRAVA_CLIENT_ID;
+  const clientId = getClientId();
 
   if (!clientId) {
     sendHtml(
       response,
       500,
-      "<h1>Missing STRAVA_CLIENT_ID</h1><p>Add STRAVA_CLIENT_ID to .env and restart node server.js.</p>",
+      "<h1>Missing Strava client ID</h1><p>Add Strava settings in the app, then try again.</p>",
     );
     return;
   }
@@ -170,24 +221,29 @@ async function handleOAuthCallback(request, response) {
   const error = requestUrl.searchParams.get("error");
 
   if (error) {
-    sendHtml(response, 400, `<h1>Strava authorization failed</h1><p>${escapeHtml(error)}</p>`);
+    redirectHome(response, {
+      strava_authorized: "0",
+      strava_error: error,
+    });
     return;
   }
 
   if (!code) {
-    sendHtml(response, 400, "<h1>Missing authorization code</h1>");
+    redirectHome(response, {
+      strava_authorized: "0",
+      strava_error: "missing_code",
+    });
     return;
   }
 
-  const clientId = process.env.STRAVA_CLIENT_ID;
-  const clientSecret = process.env.STRAVA_CLIENT_SECRET;
+  const clientId = getClientId();
+  const clientSecret = getClientSecret();
 
   if (!clientId || !clientSecret) {
-    sendHtml(
-      response,
-      500,
-      "<h1>Missing Strava app credentials</h1><p>Add STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET to .env, restart node server.js, then try again.</p>",
-    );
+    redirectHome(response, {
+      strava_authorized: "0",
+      strava_error: "missing_app_credentials",
+    });
     return;
   }
 
@@ -208,45 +264,46 @@ async function handleOAuthCallback(request, response) {
     const data = await tokenResponse.json().catch(() => ({}));
 
     if (!tokenResponse.ok) {
-      sendHtml(
-        response,
-        tokenResponse.status,
-        `<h1>Token exchange failed</h1><pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`,
-      );
+      redirectHome(response, {
+        strava_authorized: "0",
+        strava_error: data.message || `token_exchange_failed_${tokenResponse.status}`,
+      });
       return;
     }
 
-    sendHtml(
-      response,
-      200,
-      `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Strava Authorized</title>
-    <style>
-      body { font-family: system-ui, sans-serif; line-height: 1.5; margin: 32px; max-width: 860px; }
-      code, pre { background: #f3f5f7; border: 1px solid #d7dee8; border-radius: 8px; }
-      code { padding: 2px 5px; }
-      pre { overflow: auto; padding: 16px; white-space: pre-wrap; }
-    </style>
-  </head>
-  <body>
-    <h1>Strava authorization complete</h1>
-    <p>Scope returned by Strava: <code>${escapeHtml(scope)}</code></p>
-    <p>Put this value in your <code>.env</code>, replacing the old <code>STRAVA_REFRESH_TOKEN</code>:</p>
-    <pre>STRAVA_REFRESH_TOKEN=${escapeHtml(data.refresh_token || "")}</pre>
-    <p>Then restart <code>node server.js</code> and fetch activities again.</p>
-  </body>
-</html>`,
-    );
+    if (!data.refresh_token) {
+      redirectHome(response, {
+        strava_authorized: "0",
+        strava_error: "missing_refresh_token",
+      });
+      return;
+    }
+
+    process.env.STRAVA_REFRESH_TOKEN = data.refresh_token;
+    const existingAuth = loadLocalAuth();
+    await saveLocalAuth({
+      ...existingAuth,
+      athlete: data.athlete
+        ? {
+            id: data.athlete.id,
+            username: data.athlete.username,
+            firstname: data.athlete.firstname,
+            lastname: data.athlete.lastname,
+          }
+        : null,
+      refresh_token: data.refresh_token,
+      scope,
+      updated_at: new Date().toISOString(),
+    });
+
+    redirectHome(response, {
+      strava_authorized: "1",
+    });
   } catch (exchangeError) {
-    sendHtml(
-      response,
-      500,
-      `<h1>Token exchange failed</h1><p>${escapeHtml(exchangeError.message)}</p>`,
-    );
+    redirectHome(response, {
+      strava_authorized: "0",
+      strava_error: exchangeError.message || "token_exchange_failed",
+    });
   }
 }
 
@@ -257,6 +314,93 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function readRequestJson(request, maxBytes = 20_000) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+
+      if (body.length > maxBytes) {
+        reject(new Error("Request body is too large."));
+        request.destroy();
+      }
+    });
+    request.on("end", () => {
+      if (!body) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch (error) {
+        reject(new Error("Request body must be valid JSON."));
+      }
+    });
+    request.on("error", reject);
+  });
+}
+
+function getSettingsSummary() {
+  const localAuth = loadLocalAuth();
+  const clientId = getClientId();
+
+  return {
+    client_id: clientId || "",
+    credential_mode: getCredentialMode(),
+    has_client_id: Boolean(clientId),
+    has_client_secret: Boolean(getClientSecret()),
+    has_refresh_token: Boolean(getRefreshToken()),
+    is_client_id_from_env: Boolean(process.env.STRAVA_CLIENT_ID),
+    is_client_secret_from_env: Boolean(process.env.STRAVA_CLIENT_SECRET),
+    is_refresh_token_from_env: Boolean(process.env.STRAVA_REFRESH_TOKEN),
+    stored_updated_at: localAuth.updated_at || null,
+  };
+}
+
+async function handleSettings(request, response) {
+  if (request.method === "GET") {
+    sendJson(response, 200, getSettingsSummary());
+    return;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, {
+      message: "Method not allowed.",
+    });
+    return;
+  }
+
+  try {
+    const body = await readRequestJson(request);
+    const clientId = String(body.client_id || "").trim();
+    const clientSecret = String(body.client_secret || "").trim();
+
+    if (!clientId || !clientSecret) {
+      sendJson(response, 400, {
+        message: "Client ID and client secret are required.",
+      });
+      return;
+    }
+
+    const existingAuth = loadLocalAuth();
+    await saveLocalAuth({
+      ...existingAuth,
+      client_id: clientId,
+      client_secret: clientSecret,
+      updated_at: new Date().toISOString(),
+    });
+
+    sendJson(response, 200, getSettingsSummary());
+  } catch (error) {
+    sendJson(response, 400, {
+      message: error.message || "Could not save settings.",
+    });
+  }
 }
 
 async function handleActivities(request, response) {
@@ -373,6 +517,11 @@ async function createViteDevServer() {
 }
 
 function handleRequest(viteDevServer, request, response) {
+  if (request.url.startsWith("/api/settings")) {
+    handleSettings(request, response);
+    return;
+  }
+
   if (request.url.startsWith("/api/authorize")) {
     handleAuthorize(request, response);
     return;
