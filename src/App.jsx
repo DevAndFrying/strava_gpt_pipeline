@@ -23,15 +23,15 @@ const splitColumns = [
 const recentExpandDelayMs = 1000;
 const recentCollapseDelayMs = 4000;
 const recentCollapseThreshold = 50;
+const initialRecentLimit = 3;
 const actionCooldownMs = 900;
-const statusSuccessDurationMs = 5000;
 const metersToFeet = (meters) => meters * 3.28084;
 
 function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   const [token, setToken] = useState("");
   const [limit, setLimit] = useState(10);
-  const [recentLimit, setRecentLimit] = useState(10);
+  const [recentLimit, setRecentLimit] = useState(initialRecentLimit);
   const [splitUnits, setSplitUnits] = useState("miles");
   const [activityId, setActivityId] = useState("");
   const [clientId, setClientId] = useState("");
@@ -39,11 +39,8 @@ function App() {
   const [settingsSummary, setSettingsSummary] = useState(null);
   const [recentActivities, setRecentActivities] = useState([]);
   const [loadedActivities, setLoadedActivities] = useState([]);
-  const [status, setStatus] = useState({
-    message: "No activities loaded yet.",
-    tone: "",
-  });
   const [toast, setToast] = useState(null);
+  const [isJsonCopied, setIsJsonCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingRecent, setIsLoadingRecent] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -53,8 +50,8 @@ function App() {
   const recentExpandTimer = useRef(null);
   const recentCollapseTimer = useRef(null);
   const recentPanelHasFocus = useRef(false);
-  const statusTimer = useRef(null);
   const toastTimer = useRef(null);
+  const jsonCopiedTimer = useRef(null);
 
   const summaries = useMemo(
     () => loadedActivities.map((activity) => summarizeActivity(activity, splitUnits)),
@@ -68,25 +65,11 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    clearTimeout(statusTimer.current);
-
-    if (status.tone === "success" && status.message) {
-      statusTimer.current = setTimeout(() => {
-        setStatus({ message: "", tone: "" });
-      }, statusSuccessDurationMs);
-    }
-
-    return () => {
-      clearTimeout(statusTimer.current);
-    };
-  }, [status]);
-
-  useEffect(() => {
     return () => {
       clearTimeout(recentExpandTimer.current);
       clearTimeout(recentCollapseTimer.current);
-      clearTimeout(statusTimer.current);
       clearTimeout(toastTimer.current);
+      clearTimeout(jsonCopiedTimer.current);
     };
   }, []);
 
@@ -100,6 +83,15 @@ function App() {
         setSettingsSummary(null);
       });
   }, []);
+
+  useEffect(() => {
+    loadRecentActivities({ limitOverride: initialRecentLimit, showFeedback: false });
+  }, []);
+
+  useEffect(() => {
+    clearTimeout(jsonCopiedTimer.current);
+    setIsJsonCopied(false);
+  }, [jsonOutput]);
 
   function showToast(nextToast, duration = 3200) {
     clearTimeout(toastTimer.current);
@@ -203,12 +195,6 @@ function App() {
       }
 
       setLoadedActivities(sourceActivities);
-      setStatus({
-        message: trimmedToken
-          ? `Loaded summary stats for ${sourceActivities.length} activities.`
-          : `Loaded detailed stats for ${sourceActivities.length} activities.`,
-        tone: "success",
-      });
       showToast(
         {
           message: trimmedToken
@@ -223,10 +209,6 @@ function App() {
           ? " Browser CORS rules may block direct Strava API calls; use the local server instead."
           : "";
 
-      setStatus({
-        message: `${error.message || "Could not fetch activities."}${corsHint}`,
-        tone: "error",
-      });
       showToast({
         message: `${error.message || "Could not fetch activities."}${corsHint}`,
         tone: "error",
@@ -243,6 +225,11 @@ function App() {
 
     try {
       await navigator.clipboard.writeText(jsonOutput);
+      setIsJsonCopied(true);
+      clearTimeout(jsonCopiedTimer.current);
+      jsonCopiedTimer.current = setTimeout(() => {
+        setIsJsonCopied(false);
+      }, 3000);
       showToast({ message: "Copied JSON to clipboard.", tone: "success" });
     } catch (error) {
       showToast({
@@ -258,24 +245,29 @@ function App() {
     setSplitUnits(value);
 
     if (loadedActivities.length > 0) {
-      setStatus({
+      showToast({
         message: `Updated splits to ${value} for ${loadedActivities.length} activities.`,
         tone: "success",
       });
     }
   }
 
-  async function handleLoadRecent() {
+  async function loadRecentActivities({
+    limitOverride = recentLimit,
+    showFeedback = true,
+  } = {}) {
     if (!beginAction("load-recent")) return;
 
     const trimmedToken = token.trim();
-    const requestedLimit = Math.min(Math.max(Number(recentLimit) || 10, 1), 50);
+    const requestedLimit = Math.min(Math.max(Number(limitOverride) || initialRecentLimit, 1), 50);
 
     setIsLoadingRecent(true);
-    showToast(
-      { message: `Fetching last ${requestedLimit} activities...`, tone: "", isLoading: true },
-      null,
-    );
+    if (showFeedback) {
+      showToast(
+        { message: `Fetching last ${requestedLimit} activities...`, tone: "", isLoading: true },
+        null,
+      );
+    }
 
     try {
       const activities = await fetchActivities(trimmedToken, requestedLimit);
@@ -283,24 +275,24 @@ function App() {
       clearTimeout(recentCollapseTimer.current);
       setIsRecentExpanded(true);
       setRecentActivities(activities);
-      setStatus({
-        message: `Loaded ${activities.length} recent activities.`,
-        tone: "success",
-      });
-      showToast({ message: `Loaded ${activities.length} recent activities.`, tone: "success" });
+      if (showFeedback) {
+        showToast({ message: `Loaded ${activities.length} recent activities.`, tone: "success" });
+      }
     } catch (error) {
-      setStatus({
-        message: error.message || "Could not fetch recent activities.",
-        tone: "error",
-      });
-      showToast({
-        message: error.message || "Could not fetch recent activities.",
-        tone: "error",
-      });
+      if (showFeedback) {
+        showToast({
+          message: error.message || "Could not fetch recent activities.",
+          tone: "error",
+        });
+      }
     } finally {
       setIsLoadingRecent(false);
       endAction("load-recent");
     }
+  }
+
+  async function handleLoadRecent() {
+    await loadRecentActivities();
   }
 
   function scheduleRecentExpand() {
@@ -354,7 +346,6 @@ function App() {
     const normalizedId = String(id || "").trim();
 
     if (!/^\d+$/.test(normalizedId)) {
-      setStatus({ message: "Enter a numeric Strava activity ID.", tone: "error" });
       showToast({ message: "Enter a numeric Strava activity ID.", tone: "error" });
       return;
     }
@@ -372,19 +363,11 @@ function App() {
       const detail = await fetchActivityDetail(normalizedId);
       setLoadedActivities([detail]);
       setActivityId(normalizedId);
-      setStatus({
-        message: `Loaded detailed stats for activity ${normalizedId}.`,
-        tone: "success",
-      });
       showToast({
         message: `Loaded detailed stats for activity ${normalizedId}.`,
         tone: "success",
       });
     } catch (error) {
-      setStatus({
-        message: error.message || `Could not fetch activity ${normalizedId}.`,
-        tone: "error",
-      });
       showToast({
         message: error.message || `Could not fetch activity ${normalizedId}.`,
         tone: "error",
@@ -588,14 +571,6 @@ function App() {
         </div>
       </section>
 
-      <section
-        className={`status-row ${status.tone} ${status.message ? "" : "is-hidden"}`.trim()}
-        aria-live="polite"
-        aria-hidden={!status.message}
-      >
-        <p>{status.message || "Status"}</p>
-      </section>
-
       <section className="grid" aria-label="Activity results">
         <div className="panel activity-panel">
           <h2>Activity cards</h2>
@@ -605,6 +580,7 @@ function App() {
         <JsonOutputCard
           jsonOutput={jsonOutput}
           canCopy={summaries.length > 0}
+          isCopied={isJsonCopied}
           onCopy={handleCopy}
         />
       </section>
@@ -632,7 +608,7 @@ function Toast({ toast }) {
   );
 }
 
-function JsonOutputCard({ jsonOutput, canCopy, onCopy }) {
+function JsonOutputCard({ jsonOutput, canCopy, isCopied, onCopy }) {
   function handleKeyDown(event) {
     if (!canCopy || (event.key !== "Enter" && event.key !== " ")) {
       return;
@@ -654,7 +630,13 @@ function JsonOutputCard({ jsonOutput, canCopy, onCopy }) {
     >
       <div className="json-card-heading">
         <h2>JSON for ChatGPT</h2>
-        <p>{canCopy ? "Click this card to copy." : "Fetch an activity to create JSON."}</p>
+        <p>
+          {canCopy
+            ? isCopied
+              ? "JSON copied"
+              : "Click this card to copy."
+            : "Fetch an activity to create JSON."}
+        </p>
       </div>
       {canCopy && (
         <pre className="json-output" aria-label="JSON output">{jsonOutput}</pre>
