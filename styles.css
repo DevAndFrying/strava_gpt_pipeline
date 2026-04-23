@@ -266,10 +266,15 @@ button.secondary:hover:not(:disabled) {
   margin-bottom: 12px;
 }
 
-.lookup-grid {
+.lookup-grid,
+.grid {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(300px, 0.62fr);
   gap: 18px;
+  align-items: stretch;
+}
+
+.lookup-grid {
   margin-top: 18px;
   align-items: start;
 }
@@ -440,40 +445,6 @@ button.secondary:hover:not(:disabled) {
   justify-self: start;
 }
 
-.status-row {
-  margin: 18px 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px 16px;
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 1.05rem;
-  font-weight: 800;
-  text-align: center;
-  box-shadow: 0 8px 18px var(--shadow);
-}
-
-.status-row.is-hidden {
-  height: 0;
-  overflow: hidden;
-  border: 0;
-  padding: 0;
-  box-shadow: none;
-  visibility: hidden;
-}
-
-.status-row.success {
-  border-color: rgba(21, 111, 74, 0.28);
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.status-row.error {
-  border-color: rgba(165, 38, 34, 0.28);
-  background: var(--error-bg);
-  color: var(--error);
-}
-
 .toast {
   position: fixed;
   right: 18px;
@@ -530,10 +501,7 @@ button.secondary:hover:not(:disabled) {
 }
 
 .grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
-  gap: 18px;
-  align-items: stretch;
+  margin-top: 18px;
 }
 
 .json-card {
@@ -785,13 +753,13 @@ th {
     gap: 24px;
   }
 
-  .lookup-grid {
+  .lookup-grid,
+  .grid {
     grid-template-columns: minmax(560px, 1fr) minmax(360px, 0.55fr);
-    margin-top: 24px;
   }
 
-  .grid {
-    grid-template-columns: minmax(0, 1.35fr) minmax(520px, 0.65fr);
+  .lookup-grid {
+    margin-top: 24px;
   }
 
   .recent-list-clip {
