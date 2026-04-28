@@ -200,13 +200,13 @@ function redirectHome(response, params = {}) {
 
 function handleAuthorize(request, response) {
   const clientId = getClientId();
+  const clientSecret = getClientSecret();
 
-  if (!clientId) {
-    sendHtml(
-      response,
-      500,
-      "<h1>Missing Strava client ID</h1><p>Add Strava settings in the app, then try again.</p>",
-    );
+  if (!clientId || !clientSecret) {
+    redirectHome(response, {
+      strava_authorized: "0",
+      strava_error: "missing_app_credentials",
+    });
     return;
   }
 
@@ -298,6 +298,7 @@ async function handleOAuthCallback(request, response) {
             username: data.athlete.username,
             firstname: data.athlete.firstname,
             lastname: data.athlete.lastname,
+            profile: data.athlete.profile || null,
           }
         : null,
       refresh_token: data.refresh_token,
@@ -364,11 +365,75 @@ function getSettingsSummary() {
     has_client_id: Boolean(clientId),
     has_client_secret: Boolean(getClientSecret()),
     has_refresh_token: Boolean(getRefreshToken()),
+    athlete: localAuth.athlete || null,
     is_client_id_from_env: Boolean(process.env.STRAVA_CLIENT_ID),
     is_client_secret_from_env: Boolean(process.env.STRAVA_CLIENT_SECRET),
     is_refresh_token_from_env: Boolean(process.env.STRAVA_REFRESH_TOKEN),
     stored_updated_at: localAuth.updated_at || null,
   };
+}
+
+async function handleProfile(request, response) {
+  if (request.method === "GET") {
+    sendJson(response, 200, {
+      athlete: loadLocalAuth().athlete || null,
+    });
+    return;
+  }
+
+  if (request.method === "DELETE") {
+    const existingAuth = loadLocalAuth();
+    await saveLocalAuth({
+      ...existingAuth,
+      athlete: null,
+      updated_at: new Date().toISOString(),
+    });
+    sendJson(response, 200, getSettingsSummary());
+    return;
+  }
+
+  if (request.method !== "PUT") {
+    sendJson(response, 405, {
+      message: "Method not allowed.",
+    });
+    return;
+  }
+
+  try {
+    const body = await readRequestJson(request);
+    const existingAuth = loadLocalAuth();
+    const existingAthlete = existingAuth.athlete || {};
+    const firstname = String(body.firstname || "").trim();
+    const lastname = String(body.lastname || "").trim();
+    const username = existingAthlete.username || "";
+    const profile = String(body.profile || "").trim();
+    const id = String(body.id || existingAthlete.id || "").trim();
+
+    if (!firstname && !lastname && !username) {
+      sendJson(response, 400, {
+        message: "Profile needs a first or last name.",
+      });
+      return;
+    }
+
+    await saveLocalAuth({
+      ...existingAuth,
+      athlete: {
+        ...existingAthlete,
+        id: id || null,
+        firstname,
+        lastname,
+        username,
+        profile: profile || null,
+      },
+      updated_at: new Date().toISOString(),
+    });
+    sendJson(response, 200, getSettingsSummary());
+  } catch (error) {
+    sendJson(response, 400, {
+      message: error.message || "Could not save profile.",
+    });
+  }
 }
 
 async function handleSettings(request, response) {
@@ -388,19 +453,20 @@ async function handleSettings(request, response) {
     const body = await readRequestJson(request);
     const clientId = String(body.client_id || "").trim();
     const clientSecret = String(body.client_secret || "").trim();
+    const existingAuth = loadLocalAuth();
+    const nextClientSecret = clientSecret || existingAuth.client_secret || process.env.STRAVA_CLIENT_SECRET || "";
 
-    if (!clientId || !clientSecret) {
+    if (!clientId || !nextClientSecret) {
       sendJson(response, 400, {
         message: "Client ID and client secret are required.",
       });
       return;
     }
 
-    const existingAuth = loadLocalAuth();
     await saveLocalAuth({
       ...existingAuth,
       client_id: clientId,
-      client_secret: clientSecret,
+      client_secret: nextClientSecret,
       updated_at: new Date().toISOString(),
     });
 
@@ -487,7 +553,10 @@ function sendStravaError(response, error, fallbackMessage) {
 
 async function serveStatic(request, response) {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
-  const requestedPath = requestUrl.pathname === "/" ? "/index.html" : requestUrl.pathname;
+  const requestedPath =
+    requestUrl.pathname === "/" || !path.extname(requestUrl.pathname)
+      ? "/index.html"
+      : requestUrl.pathname;
   const filePath = path.normalize(path.join(staticRoot, requestedPath));
 
   if (!filePath.startsWith(staticRoot)) {
@@ -526,6 +595,11 @@ async function createViteDevServer() {
 }
 
 function handleRequest(viteDevServer, request, response) {
+  if (request.url.startsWith("/api/profile")) {
+    handleProfile(request, response);
+    return;
+  }
+
   if (request.url.startsWith("/api/settings")) {
     handleSettings(request, response);
     return;

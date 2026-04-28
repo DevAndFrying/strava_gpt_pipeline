@@ -7,6 +7,8 @@ import {
   formatDate,
   fetchStravaSettings,
   saveStravaSettings,
+  updateProfile,
+  deleteProfile,
   summarizeActivity,
 } from "./strava.js";
 
@@ -26,8 +28,50 @@ const recentCollapseThreshold = 50;
 const initialRecentLimit = 3;
 const actionCooldownMs = 900;
 const metersToFeet = (meters) => meters * 3.28084;
+const emptyProfileDraft = {
+  firstname: "",
+  lastname: "",
+  profile: "",
+};
+
+function getProfileName(athlete) {
+  const displayName = [athlete?.firstname, athlete?.lastname].filter(Boolean).join(" ");
+
+  return displayName || athlete?.username || "No Strava profile";
+}
+
+function getProfileInitial(athlete) {
+  return getProfileName(athlete).slice(0, 1).toUpperCase();
+}
+
+function getAuthorizationToast(searchParams) {
+  const status = searchParams.get("strava_authorized");
+
+  if (status === "1") {
+    return { message: "Strava activity permission is connected.", tone: "success" };
+  }
+
+  if (status !== "0") {
+    return null;
+  }
+
+  const error = searchParams.get("strava_error");
+
+  if (error === "missing_app_credentials") {
+    return {
+      message: "Enter your Strava client ID and client secret before authorizing.",
+      tone: "error",
+    };
+  }
+
+  return {
+    message: `Strava authorization failed${error ? `: ${error}` : "."}`,
+    tone: "error",
+  };
+}
 
 function App() {
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   const [limit, setLimit] = useState(10);
   const [recentLimit, setRecentLimit] = useState(initialRecentLimit);
@@ -43,8 +87,11 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingRecent, setIsLoadingRecent] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isDeletingProfile, setIsDeletingProfile] = useState(false);
   const [isRecentExpanded, setIsRecentExpanded] = useState(true);
   const [pullingActivityId, setPullingActivityId] = useState("");
+  const [profileDraft, setProfileDraft] = useState(emptyProfileDraft);
   const actionLocks = useRef(new Map());
   const recentExpandTimer = useRef(null);
   const recentCollapseTimer = useRef(null);
@@ -73,6 +120,17 @@ function App() {
   }, []);
 
   useEffect(() => {
+    function handlePopState() {
+      setCurrentPath(window.location.pathname);
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
+
+  useEffect(() => {
     fetchStravaSettings()
       .then((settings) => {
         setSettingsSummary(settings);
@@ -81,6 +139,33 @@ function App() {
       .catch(() => {
         setSettingsSummary(null);
       });
+  }, []);
+
+  useEffect(() => {
+    const athlete = settingsSummary?.athlete;
+
+    setProfileDraft({
+      firstname: athlete?.firstname || "",
+      lastname: athlete?.lastname || "",
+      profile: athlete?.profile || "",
+    });
+  }, [settingsSummary?.athlete]);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const authorizationToast = getAuthorizationToast(searchParams);
+
+    if (!authorizationToast) {
+      return;
+    }
+
+    showToast(authorizationToast, authorizationToast.tone === "success" ? 4200 : 5200);
+    searchParams.delete("strava_authorized");
+    searchParams.delete("strava_error");
+
+    const nextSearch = searchParams.toString();
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+    window.history.replaceState({}, "", nextUrl);
   }, []);
 
   useEffect(() => {
@@ -130,10 +215,22 @@ function App() {
     setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
   }
 
-  async function handleSaveSettings(event) {
+  function navigateTo(path) {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, "", path);
+    }
+    setCurrentPath(path);
+  }
+
+  function handleNavClick(event, path) {
+    event.preventDefault();
+    navigateTo(path);
+  }
+
+  async function handleAuthorizeSubmit(event) {
     event.preventDefault();
 
-    if (!beginAction("save-settings")) return;
+    if (!beginAction("authorize-strava")) return;
 
     const trimmedClientId = clientId.trim();
     const trimmedClientSecret = clientSecret.trim();
@@ -141,21 +238,22 @@ function App() {
     setIsSavingSettings(true);
 
     try {
-      const settings = await saveStravaSettings({
+      if (!trimmedClientId || (!trimmedClientSecret && !settingsSummary?.has_client_secret)) {
+        throw new Error("Enter your Strava client ID and client secret before authorizing.");
+      }
+
+      await saveStravaSettings({
         client_id: trimmedClientId,
         client_secret: trimmedClientSecret,
       });
-      setSettingsSummary(settings);
-      setClientSecret("");
-      showToast({ message: "Saved Strava app settings.", tone: "success" });
+      window.location.assign("/api/authorize");
     } catch (error) {
       showToast({
-        message: error.message || "Could not save Strava app settings.",
+        message: error.message || "Could not save Strava app settings before authorizing.",
         tone: "error",
-      });
-    } finally {
+      }, 5200);
       setIsSavingSettings(false);
-      endAction("save-settings");
+      endAction("authorize-strava");
     }
   }
 
@@ -373,24 +471,105 @@ function App() {
     }
   }
 
-  return (
-    <main className="shell">
-      <div className="top-bar">
-        <button
-          type="button"
-          className="theme-toggle"
-          aria-pressed={theme === "dark"}
-          onClick={toggleTheme}
-        >
-          {theme === "dark" ? "Light mode" : "Dark mode"}
-        </button>
-      </div>
+  function handleProfileDraftChange(field, value) {
+    setProfileDraft((currentProfile) => ({
+      ...currentProfile,
+      [field]: value,
+    }));
+  }
 
-      <section className="intro">
-        <p className="eyebrow">Strava API</p>
-        <h1>Activity export for ChatGPT</h1>
-        <p>Fetch recent activities and copy a clean JSON summary you can send in a chat.</p>
-      </section>
+  async function handleProfileSubmit(event) {
+    event.preventDefault();
+
+    if (!beginAction("save-profile")) return;
+
+    setIsSavingProfile(true);
+
+    try {
+      const settings = await updateProfile(profileDraft);
+      setSettingsSummary(settings);
+      showToast({ message: "Profile updated.", tone: "success" });
+    } catch (error) {
+      showToast({
+        message: error.message || "Could not update profile.",
+        tone: "error",
+      });
+    } finally {
+      setIsSavingProfile(false);
+      endAction("save-profile");
+    }
+  }
+
+  async function handleDeleteProfile() {
+    if (!window.confirm("Delete the saved local profile? Strava credentials will stay saved.")) {
+      return;
+    }
+
+    if (!beginAction("delete-profile")) return;
+
+    setIsDeletingProfile(true);
+
+    try {
+      const settings = await deleteProfile();
+      setSettingsSummary(settings);
+      showToast({ message: "Profile deleted.", tone: "success" });
+    } catch (error) {
+      showToast({
+        message: error.message || "Could not delete profile.",
+        tone: "error",
+      });
+    } finally {
+      setIsDeletingProfile(false);
+      endAction("delete-profile");
+    }
+  }
+
+  const isProfileRoute = currentPath === "/profile";
+
+  return (
+    <div className="app-frame">
+      <header className="top-bar">
+        <div className="top-bar-inner">
+          <a className="home-link" href="/" onClick={(event) => handleNavClick(event, "/")}>
+            Home
+          </a>
+          <div className="top-actions">
+            <ProfileNav
+              settingsSummary={settingsSummary}
+              isActive={isProfileRoute}
+              onClick={(event) => handleNavClick(event, "/profile")}
+            />
+            <button
+              type="button"
+              className="theme-toggle"
+              aria-pressed={theme === "dark"}
+              onClick={toggleTheme}
+            >
+              {theme === "dark" ? "Light mode" : "Dark mode"}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="shell">
+      {isProfileRoute ? (
+        <ProfilePage
+          settingsSummary={settingsSummary}
+          profileDraft={profileDraft}
+          isSavingProfile={isSavingProfile}
+          isDeletingProfile={isDeletingProfile}
+          onProfileDraftChange={handleProfileDraftChange}
+          onProfileSubmit={handleProfileSubmit}
+          onDeleteProfile={handleDeleteProfile}
+          onBack={(event) => handleNavClick(event, "/")}
+        />
+      ) : (
+        <>
+          <section className="intro">
+            <p className="eyebrow">Strava API</p>
+            <h1>Activity export for ChatGPT</h1>
+            <p>Fetch recent activities and copy a clean JSON summary you can send in a chat.</p>
+          </section>
 
       <section className="panel setup-panel" aria-labelledby="setup-title">
         <h2 id="setup-title">Fetch activities</h2>
@@ -435,7 +614,7 @@ function App() {
         <div className="oauth-help">
           <h3>Need activity permission?</h3>
           <p>Authorize this app with Strava once, then return here and fetch activities.</p>
-          <form className="credential-form" onSubmit={handleSaveSettings}>
+          <form id="strava-credential-form" className="credential-form" onSubmit={handleAuthorizeSubmit}>
             <label>
               Strava client ID
               <input
@@ -460,19 +639,16 @@ function App() {
                 }
               />
             </label>
-            <button type="submit" className="secondary" disabled={isSavingSettings}>
-              {isSavingSettings ? "Saving..." : "Save Strava settings"}
-            </button>
           </form>
           <p className="credential-status">
             {settingsSummary?.has_client_id && settingsSummary?.has_client_secret
               ? "Strava app settings are saved locally."
-              : "Save your Strava app settings before authorizing."}
+              : "Strava app settings will save when you authorize."}
             {settingsSummary?.has_refresh_token ? " Activity permission is connected." : ""}
           </p>
-          <a className="button-link" href="/api/authorize">
-            Authorize with Strava
-          </a>
+          <button type="submit" className="button-link" form="strava-credential-form" disabled={isSavingSettings}>
+            {isSavingSettings ? "Saving..." : "Authorize with Strava"}
+          </button>
         </div>
       </section>
 
@@ -563,8 +739,135 @@ function App() {
           onCopy={handleCopy}
         />
       </section>
+        </>
+      )}
       <Toast toast={toast} />
-    </main>
+      </main>
+    </div>
+  );
+}
+
+function ProfileNav({ settingsSummary, isActive, onClick }) {
+  const athlete = settingsSummary?.athlete;
+
+  return (
+    <a
+      className={`profile-nav ${isActive ? "is-active" : ""}`.trim()}
+      href="/profile"
+      aria-current={isActive ? "page" : undefined}
+      onClick={onClick}
+    >
+      {athlete?.profile ? (
+        <img src={athlete.profile} alt="" />
+      ) : (
+        <span className="profile-nav-avatar" aria-hidden="true">
+          {getProfileInitial(athlete)}
+        </span>
+      )}
+      <span>{getProfileName(athlete)}</span>
+    </a>
+  );
+}
+
+function ProfilePage({
+  settingsSummary,
+  profileDraft,
+  isSavingProfile,
+  isDeletingProfile,
+  onProfileDraftChange,
+  onProfileSubmit,
+  onDeleteProfile,
+  onBack,
+}) {
+  return (
+    <section className="profile-page" aria-labelledby="profile-title">
+      <div className="profile-page-heading">
+        <div>
+          <p className="eyebrow">Profile</p>
+          <h1 id="profile-title">Strava profile</h1>
+        </div>
+        <a className="secondary-link" href="/" onClick={onBack}>
+          Back to export
+        </a>
+      </div>
+
+      <div className="profile-layout">
+        <div className="panel">
+          <ProfileSummary settingsSummary={settingsSummary} />
+        </div>
+
+        <form className="panel profile-form" onSubmit={onProfileSubmit}>
+          <h2>Edit profile</h2>
+          <div className="profile-form-grid">
+            <label>
+              First name
+              <input
+                value={profileDraft.firstname}
+                onChange={(event) => onProfileDraftChange("firstname", event.target.value)}
+                autoComplete="given-name"
+              />
+            </label>
+            <label>
+              Last name
+              <input
+                value={profileDraft.lastname}
+                onChange={(event) => onProfileDraftChange("lastname", event.target.value)}
+                autoComplete="family-name"
+              />
+            </label>
+            <label>
+              Profile image URL
+              <input
+                value={profileDraft.profile}
+                onChange={(event) => onProfileDraftChange("profile", event.target.value)}
+                inputMode="url"
+                placeholder="https://..."
+              />
+            </label>
+          </div>
+
+          <div className="profile-actions">
+            <button type="submit" disabled={isSavingProfile || isDeletingProfile}>
+              {isSavingProfile ? "Saving..." : "Save profile"}
+            </button>
+            <button
+              type="button"
+              className="danger"
+              disabled={isSavingProfile || isDeletingProfile || !settingsSummary?.athlete}
+              onClick={onDeleteProfile}
+            >
+              {isDeletingProfile ? "Deleting..." : "Delete profile"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function ProfileSummary({ settingsSummary }) {
+  const athlete = settingsSummary?.athlete;
+  const profileName = getProfileName(athlete);
+
+  return (
+    <div className="profile-summary" aria-label="Strava profile">
+      {athlete?.profile ? (
+        <img src={athlete.profile} alt="" />
+      ) : (
+        <div className="profile-avatar" aria-hidden="true">
+          {(profileName || "S").slice(0, 1).toUpperCase()}
+        </div>
+      )}
+      <div>
+        <p className="profile-label">Profile</p>
+        <h3>{profileName}</h3>
+        <p>
+          {athlete?.id
+            ? `Athlete ID ${athlete.id}${athlete.username ? ` - @${athlete.username}` : ""}`
+            : "Connect Strava to show your athlete profile."}
+        </p>
+      </div>
+    </div>
   );
 }
 

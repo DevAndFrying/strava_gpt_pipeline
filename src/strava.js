@@ -260,6 +260,36 @@ export async function saveStravaSettings(settings) {
   return data;
 }
 
+export async function updateProfile(profile) {
+  const response = await fetch("/api/profile", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(profile),
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throwResponseError(response, data);
+  }
+
+  return data;
+}
+
+export async function deleteProfile() {
+  const response = await fetch("/api/profile", {
+    method: "DELETE",
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throwResponseError(response, data);
+  }
+
+  return data;
+}
+
 export function formatApiErrorDetails(data) {
   const details = [];
 
