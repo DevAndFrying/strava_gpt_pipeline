@@ -74,6 +74,43 @@ Then visit:
 http://localhost:5174
 ```
 
+## Run with Docker
+
+Build and start the container:
+
+```bash
+docker compose up -d --build
+```
+
+Then visit:
+
+```text
+http://localhost:5174
+```
+
+The Compose service uses `restart: unless-stopped`, so it comes back after
+Docker starts on boot unless you explicitly stop it.
+
+Containerized auth data is stored in the named volume
+`strava-gpt-pipeline-data` at `/data/.strava-auth.json`. That keeps your saved
+Strava client settings and refresh token across container rebuilds.
+
+If you prefer to provide credentials through environment variables instead of
+the app UI, add them under the service `environment:` block in
+`docker-compose.yml` or use a Compose env file:
+
+```dotenv
+STRAVA_CLIENT_ID=your_strava_client_id
+STRAVA_CLIENT_SECRET=your_strava_client_secret
+STRAVA_REFRESH_TOKEN=your_refresh_token
+```
+
+To stop the container:
+
+```bash
+docker compose down
+```
+
 Choose how many activities to request and click `Fetch from Strava`.
 
 When you leave the token field blank, the app uses the local server

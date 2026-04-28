@@ -7,7 +7,12 @@ const port = Number(process.env.PORT || 5174);
 const root = __dirname;
 const staticRoot = fsSync.existsSync(path.join(root, "dist")) ? path.join(root, "dist") : root;
 const isDevelopment = process.env.NODE_ENV === "development";
-const localAuthPath = path.join(root, ".strava-auth.json");
+const dataDir = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : root;
+const localAuthPath = process.env.STRAVA_AUTH_FILE
+  ? path.resolve(process.env.STRAVA_AUTH_FILE)
+  : path.join(dataDir, ".strava-auth.json");
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -83,6 +88,10 @@ function loadLocalAuth() {
 
 async function saveLocalAuth(auth) {
   const nextPath = `${localAuthPath}.tmp`;
+  await fs.mkdir(path.dirname(localAuthPath), {
+    recursive: true,
+    mode: 0o700,
+  });
 
   await fs.writeFile(nextPath, `${JSON.stringify(auth, null, 2)}\n`, {
     mode: 0o600,

@@ -1,0 +1,15 @@
+services:
+  strava-gpt-pipeline:
+    build: .
+    container_name: strava-gpt-pipeline
+    ports:
+      - "5174:5174"
+    environment:
+      PORT: 5174
+      DATA_DIR: /data
+    volumes:
+      - strava-gpt-pipeline-data:/data
+    restart: unless-stopped
+
+volumes:
+  strava-gpt-pipeline-data:
