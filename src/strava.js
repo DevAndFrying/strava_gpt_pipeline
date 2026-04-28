@@ -191,25 +191,11 @@ export function summarizeActivity(activity, splitUnits) {
   };
 }
 
-export async function fetchActivities(token, limit) {
-  const useTokenOverride = Boolean(token);
-  const url = new URL(
-    useTokenOverride
-      ? "https://www.strava.com/api/v3/athlete/activities"
-      : "/api/activities",
-    window.location.href,
-  );
+export async function fetchActivities(limit) {
+  const url = new URL("/api/activities", window.location.href);
   url.searchParams.set("per_page", String(limit));
 
-  const options = useTokenOverride
-    ? {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    : {};
-
-  const response = await fetch(url, options);
+  const response = await fetch(url);
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -295,7 +281,7 @@ export function formatApiErrorDetails(data) {
 function throwResponseError(response, data) {
   if (response.status === 401) {
     throw new Error(
-      `Strava rejected this token. Use a current OAuth access token with activity:read or activity:read_all scope.${formatApiErrorDetails(data)}`,
+      `Strava authorization failed. Reconnect the app or check the configured scopes.${formatApiErrorDetails(data)}`,
     );
   }
 

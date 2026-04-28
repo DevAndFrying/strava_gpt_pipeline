@@ -29,7 +29,6 @@ const metersToFeet = (meters) => meters * 3.28084;
 
 function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
-  const [token, setToken] = useState("");
   const [limit, setLimit] = useState(10);
   const [recentLimit, setRecentLimit] = useState(initialRecentLimit);
   const [splitUnits, setSplitUnits] = useState("miles");
@@ -165,7 +164,6 @@ function App() {
 
     if (!beginAction("fetch-activities")) return;
 
-    const trimmedToken = token.trim();
     const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
 
     setIsLoading(true);
@@ -176,10 +174,10 @@ function App() {
     );
 
     try {
-      const activities = await fetchActivities(trimmedToken, requestedLimit);
+      const activities = await fetchActivities(requestedLimit);
       let sourceActivities = activities;
 
-      if (!trimmedToken && activities.length > 0) {
+      if (activities.length > 0) {
         showToast({
           message: `Loaded ${activities.length} activities. Fetching detailed stats...`,
           tone: "",
@@ -197,9 +195,7 @@ function App() {
       setLoadedActivities(sourceActivities);
       showToast(
         {
-          message: trimmedToken
-            ? `Loaded summary stats for ${sourceActivities.length} activities.`
-            : `Loaded detailed stats for ${sourceActivities.length} activities.`,
+          message: `Loaded detailed stats for ${sourceActivities.length} activities.`,
           tone: "success",
         },
       );
@@ -258,7 +254,6 @@ function App() {
   } = {}) {
     if (!beginAction("load-recent")) return;
 
-    const trimmedToken = token.trim();
     const requestedLimit = Math.min(Math.max(Number(limitOverride) || initialRecentLimit, 1), 50);
 
     setIsLoadingRecent(true);
@@ -270,7 +265,7 @@ function App() {
     }
 
     try {
-      const activities = await fetchActivities(trimmedToken, requestedLimit);
+      const activities = await fetchActivities(requestedLimit);
       clearTimeout(recentExpandTimer.current);
       clearTimeout(recentCollapseTimer.current);
       setIsRecentExpanded(true);
@@ -401,17 +396,6 @@ function App() {
         <h2 id="setup-title">Fetch activities</h2>
         <form className="controls" onSubmit={handleSubmit}>
           <label>
-            Access token override
-            <input
-              value={token}
-              onChange={(event) => setToken(event.target.value)}
-              type="password"
-              autoComplete="off"
-              placeholder="Optional when server env vars are set"
-            />
-          </label>
-
-          <label>
             Activities to request
             <input
               value={limit}
@@ -447,11 +431,6 @@ function App() {
             </button>
           </div>
         </form>
-
-        <p className="note">
-          Leave the token blank to use the local server authorization. Paste a token only for a
-          one-off browser request.
-        </p>
 
         <div className="oauth-help">
           <h3>Need activity permission?</h3>
@@ -716,7 +695,7 @@ function ActivityList({ activities }) {
   if (activities.length === 0) {
     return (
       <div className="activity-list">
-        <p>No activities returned for this token.</p>
+        <p>No activities returned.</p>
       </div>
     );
   }

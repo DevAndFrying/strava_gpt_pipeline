@@ -36,7 +36,7 @@ Environment variables take precedence over `.strava-auth.json`. You can also
 set `STRAVA_REFRESH_TOKEN` in `.env`, though the app authorization flow usually
 handles that for you.
 
-For a quick test, you can use a short-lived access token instead:
+For a quick test, you can still use a short-lived access token on the server:
 
 ```dotenv
 STRAVA_TOKEN=your_access_token
@@ -113,10 +113,9 @@ docker compose down
 
 Choose how many activities to request and click `Fetch from Strava`.
 
-When you leave the token field blank, the app uses the local server
-authorization and fetches detailed stats for each returned activity. That uses
-one request for the activity list plus one request per activity, so a limit of
-`10` uses `11` Strava API requests.
+The app uses the local server authorization and fetches detailed stats for each
+returned activity. That uses one request for the activity list plus one request
+per activity, so a limit of `10` uses `11` Strava API requests.
 
 The split unit selector changes split distances and speeds between miles and
 kilometers without refetching. Detailed exports include every split returned by
