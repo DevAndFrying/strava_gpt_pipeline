@@ -80,6 +80,8 @@ function App() {
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [settingsSummary, setSettingsSummary] = useState(null);
+  const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
+  const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
   const [recentActivities, setRecentActivities] = useState([]);
   const [loadedActivities, setLoadedActivities] = useState([]);
   const [toast, setToast] = useState(null);
@@ -138,8 +140,21 @@ function App() {
       })
       .catch(() => {
         setSettingsSummary(null);
+      })
+      .finally(() => {
+        setHasLoadedSettings(true);
       });
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedSettings) {
+      return;
+    }
+
+    if (!settingsSummary?.has_client_id || !settingsSummary?.has_client_secret) {
+      setIsCredentialModalOpen(true);
+    }
+  }, [hasLoadedSettings, settingsSummary?.has_client_id, settingsSummary?.has_client_secret]);
 
   useEffect(() => {
     const athlete = settingsSummary?.athlete;
@@ -573,82 +588,72 @@ function App() {
 
       <section className="panel setup-panel" aria-labelledby="setup-title">
         <h2 id="setup-title">Fetch activities</h2>
-        <form className="controls" onSubmit={handleSubmit}>
-          <label>
-            Activities to request
-            <input
-              value={limit}
-              onChange={(event) => setLimit(event.target.value)}
-              type="number"
-              min="1"
-              max="50"
-            />
-          </label>
-
-          <label>
-            Split units
-            <select
-              value={splitUnits}
-              onChange={(event) => handleSplitUnitsChange(event.target.value)}
-            >
-              <option value="miles">Miles</option>
-              <option value="kilometers">Kilometers</option>
-            </select>
-          </label>
-
-          <div className="actions">
-            <button type="submit" disabled={isLoading}>
-              {isLoading ? "Fetching..." : "Fetch from Strava"}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={summaries.length === 0}
-              onClick={handleCopy}
-            >
-              Copy JSON
-            </button>
-          </div>
-        </form>
-
-        <div className="oauth-help">
-          <h3>Need activity permission?</h3>
-          <p>Authorize this app with Strava once, then return here and fetch activities.</p>
-          <form id="strava-credential-form" className="credential-form" onSubmit={handleAuthorizeSubmit}>
+        <div className="setup-grid">
+          <form className="controls" onSubmit={handleSubmit}>
             <label>
-              Strava client ID
+              Activities to request
               <input
-                value={clientId}
-                onChange={(event) => setClientId(event.target.value)}
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="From your Strava API app"
+                value={limit}
+                onChange={(event) => setLimit(event.target.value)}
+                type="number"
+                min="1"
+                max="50"
               />
             </label>
+
             <label>
-              Strava client secret
-              <input
-                value={clientSecret}
-                onChange={(event) => setClientSecret(event.target.value)}
-                type="password"
-                autoComplete="off"
-                placeholder={
-                  settingsSummary?.has_client_secret
-                    ? "Saved locally; enter a new value to replace it"
-                    : "From your Strava API app"
-                }
-              />
+              Split units
+              <select
+                value={splitUnits}
+                onChange={(event) => handleSplitUnitsChange(event.target.value)}
+              >
+                <option value="miles">Miles</option>
+                <option value="kilometers">Kilometers</option>
+              </select>
             </label>
+
+            <div className="actions">
+              <button type="submit" disabled={isLoading}>
+                {isLoading ? "Fetching..." : "Fetch from Strava"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={summaries.length === 0}
+                onClick={handleCopy}
+              >
+                Copy JSON
+              </button>
+            </div>
           </form>
-          <p className="credential-status">
-            {settingsSummary?.has_client_id && settingsSummary?.has_client_secret
-              ? "Strava app settings are saved locally."
-              : "Strava app settings will save when you authorize."}
-            {settingsSummary?.has_refresh_token ? " Activity permission is connected." : ""}
-          </p>
-          <button type="submit" className="button-link" form="strava-credential-form" disabled={isSavingSettings}>
-            {isSavingSettings ? "Saving..." : "Authorize with Strava"}
-          </button>
+
+          <div className="embedded-lookup" aria-labelledby="activity-id-title">
+            <h3 id="activity-id-title">Pull by activity ID</h3>
+            <form
+              className="id-lookup"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handlePullActivity(activityId);
+              }}
+            >
+              <label>
+                Activity ID
+                <input
+                  value={activityId}
+                  onChange={(event) => setActivityId(event.target.value)}
+                  inputMode="numeric"
+                  placeholder="Paste activity ID"
+                />
+              </label>
+              <button type="submit" disabled={Boolean(pullingActivityId)}>
+                {pullingActivityId ? "Pulling..." : "Pull activity"}
+              </button>
+            </form>
+            <p className="note">
+              Pulling by ID uses the local server credentials and loads one detailed activity into
+              the cards and JSON output.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -697,33 +702,6 @@ function App() {
           />
         </div>
 
-        <div className="panel lookup-panel id-panel">
-          <h2>Pull by activity ID</h2>
-          <form
-            className="id-lookup"
-            onSubmit={(event) => {
-              event.preventDefault();
-              handlePullActivity(activityId);
-            }}
-          >
-            <label>
-              Activity ID
-              <input
-                value={activityId}
-                onChange={(event) => setActivityId(event.target.value)}
-                inputMode="numeric"
-                placeholder="Paste activity ID"
-              />
-            </label>
-            <button type="submit" disabled={Boolean(pullingActivityId)}>
-              {pullingActivityId ? "Pulling..." : "Pull activity"}
-            </button>
-          </form>
-          <p className="note">
-            Pulling by ID uses the local server credentials and loads one detailed activity into
-            the cards and JSON output.
-          </p>
-        </div>
       </section>
 
       <section className="grid" aria-label="Activity results">
@@ -743,6 +721,98 @@ function App() {
       )}
       <Toast toast={toast} />
       </main>
+
+      {isCredentialModalOpen && (
+        <StravaCredentialModal
+          clientId={clientId}
+          clientSecret={clientSecret}
+          settingsSummary={settingsSummary}
+          isSavingSettings={isSavingSettings}
+          onClientIdChange={setClientId}
+          onClientSecretChange={setClientSecret}
+          onSubmit={handleAuthorizeSubmit}
+          onClose={() => setIsCredentialModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function StravaCredentialModal({
+  clientId,
+  clientSecret,
+  settingsSummary,
+  isSavingSettings,
+  onClientIdChange,
+  onClientSecretChange,
+  onSubmit,
+  onClose,
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        className="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="strava-credential-title"
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">Strava setup</p>
+            <h2 id="strava-credential-title">Need activity permission?</h2>
+          </div>
+          <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>
+            x
+          </button>
+        </div>
+
+        <p className="modal-copy">
+          Add your Strava app credentials, authorize once, then return here to fetch activities.
+        </p>
+
+        <form id="strava-credential-form" className="credential-form" onSubmit={onSubmit}>
+          <label>
+            Strava client ID
+            <input
+              value={clientId}
+              onChange={(event) => onClientIdChange(event.target.value)}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="From your Strava API app"
+            />
+          </label>
+          <label>
+            Strava client secret
+            <input
+              value={clientSecret}
+              onChange={(event) => onClientSecretChange(event.target.value)}
+              type="password"
+              autoComplete="off"
+              placeholder={
+                settingsSummary?.has_client_secret
+                  ? "Saved locally; enter a new value to replace it"
+                  : "From your Strava API app"
+              }
+            />
+          </label>
+        </form>
+
+        <p className="credential-status">
+          {settingsSummary?.has_client_id && settingsSummary?.has_client_secret
+            ? "Strava app settings are saved locally."
+            : "Strava app settings will save when you authorize."}
+          {settingsSummary?.has_refresh_token ? " Activity permission is connected." : ""}
+        </p>
+
+        <div className="modal-actions">
+          <button type="button" className="secondary" onClick={onClose}>
+            Not now
+          </button>
+          <button type="submit" form="strava-credential-form" disabled={isSavingSettings}>
+            {isSavingSettings ? "Saving..." : "Authorize with Strava"}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

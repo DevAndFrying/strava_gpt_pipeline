@@ -21,7 +21,7 @@
   --shadow: rgba(23, 32, 42, 0.06);
   --shadow-strong: rgba(23, 32, 42, 0.18);
   --panel-padding: clamp(14px, 2.5vw, 20px);
-  --card-padding: 14px;
+  --card-padding: 8px;
 }
 
 :root[data-theme="dark"] {
@@ -243,11 +243,33 @@ p {
   padding: var(--panel-padding);
 }
 
+.setup-panel {
+  --panel-padding: 8px;
+}
+
+.setup-panel h2 {
+  margin-bottom: 5px;
+  font-size: 0.82rem;
+  line-height: 1.15;
+}
+
+.setup-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(240px, 0.72fr);
+  gap: 8px;
+  align-items: start;
+}
+
 .controls {
   display: grid;
   grid-template-columns: minmax(220px, 1.1fr) minmax(160px, 0.75fr) minmax(320px, 1.2fr);
   gap: 16px;
   align-items: end;
+}
+
+.setup-panel .controls {
+  grid-template-columns: minmax(90px, 0.62fr) minmax(105px, 0.58fr) minmax(180px, 0.9fr);
+  gap: 5px;
 }
 
 label {
@@ -256,6 +278,12 @@ label {
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+.setup-panel label {
+  gap: 2px;
+  font-size: 0.66rem;
+  line-height: 1.08;
 }
 
 input,
@@ -272,6 +300,13 @@ input,
 select {
   min-height: 44px;
   padding: 10px 12px;
+}
+
+.setup-panel input,
+.setup-panel select {
+  min-height: 26px;
+  padding: 3px 6px;
+  font-size: 0.72rem;
 }
 
 input:focus,
@@ -299,6 +334,16 @@ button:focus-visible {
   font-size: 0.95rem;
   line-height: 1.1;
   font-weight: 750;
+}
+
+.setup-panel .controls .actions {
+  gap: 4px;
+}
+
+.setup-panel .controls .actions button {
+  min-height: 26px;
+  padding: 3px 7px;
+  font-size: 0.68rem;
 }
 
 button {
@@ -364,6 +409,23 @@ button.danger:hover:not(:disabled) {
   font-size: 0.9rem;
 }
 
+.embedded-lookup {
+  border-left: 1px solid var(--line);
+  padding-left: 8px;
+}
+
+.embedded-lookup h3 {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  line-height: 1.15;
+}
+
+.embedded-lookup .note {
+  margin-top: 4px;
+  font-size: 0.64rem;
+  line-height: 1.18;
+}
+
 .oauth-help {
   margin-top: 18px;
   border-top: 1px solid var(--line);
@@ -391,6 +453,69 @@ button.danger:hover:not(:disabled) {
 
 .credential-status {
   margin-bottom: 12px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(17, 20, 22, 0.58);
+}
+
+.modal-panel {
+  width: min(620px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: var(--panel-padding);
+  background: var(--surface);
+  box-shadow: 0 24px 70px var(--shadow-strong);
+}
+
+.modal-heading {
+  display: flex;
+  gap: 14px;
+  align-items: start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.modal-heading h2 {
+  margin-bottom: 0;
+  font-size: 1.3rem;
+}
+
+.modal-copy {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.icon-button {
+  display: inline-grid;
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  place-items: center;
+  border: 1px solid var(--line);
+  padding: 0;
+  background: var(--subtle);
+  color: var(--text);
+  line-height: 1;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--subtle-hover);
 }
 
 .profile-summary {
@@ -501,7 +626,6 @@ button.danger:hover:not(:disabled) {
   align-items: center;
 }
 
-.lookup-grid,
 .grid {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(300px, 0.62fr);
@@ -510,6 +634,9 @@ button.danger:hover:not(:disabled) {
 }
 
 .lookup-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
   margin-top: 18px;
   align-items: start;
 }
@@ -604,17 +731,17 @@ button.danger:hover:not(:disabled) {
 
 .recent-list {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .recent-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 5px 7px;
   background: var(--surface-raised);
 }
 
@@ -624,34 +751,34 @@ button.danger:hover:not(:disabled) {
 
 .recent-card h3 {
   margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.25;
+  font-size: 0.78rem;
+  line-height: 1.15;
   overflow-wrap: anywhere;
 }
 
 .recent-primary-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 7px;
+  gap: 4px;
+  margin-top: 4px;
 }
 
 .recent-primary-meta span {
   border: 1px solid var(--pill-line);
-  border-radius: 8px;
-  padding: 4px 8px;
+  border-radius: 6px;
+  padding: 2px 5px;
   background: var(--pill);
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 0.74rem;
   font-weight: 850;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 
 .recent-card p,
 .empty-state,
 .recent-collapsed-note {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.74rem;
 }
 
 .recent-collapsed-note {
@@ -664,20 +791,26 @@ button.danger:hover:not(:disabled) {
 }
 
 .recent-card button {
-  min-height: 32px;
-  padding: 6px 10px;
-  font-size: 0.86rem;
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 0.76rem;
 }
 
 .id-lookup {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
   align-items: end;
 }
 
 .id-lookup button {
   justify-self: start;
+}
+
+.setup-panel .id-lookup button {
+  min-height: 26px;
+  padding: 3px 7px;
+  font-size: 0.68rem;
 }
 
 .toast {
@@ -783,7 +916,7 @@ button.danger:hover:not(:disabled) {
 
 .activity-list {
   display: grid;
-  gap: 12px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -806,68 +939,69 @@ button.danger:hover:not(:disabled) {
 }
 
 .activity-card h3 {
-  margin: 0 0 8px;
-  font-size: 1rem;
+  margin: 0 0 5px;
+  font-size: 0.84rem;
+  line-height: 1.18;
 }
 
 .activity-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.74rem;
 }
 
 .activity-meta span {
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 4px 8px;
+  border-radius: 6px;
+  padding: 2px 5px;
   background: var(--field);
 }
 
 .detail-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-  gap: 8px;
-  margin: 14px 0 0;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 5px;
+  margin: 8px 0 0;
 }
 
 .detail-grid div {
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--field);
-  padding: 8px;
+  padding: 5px;
 }
 
 .detail-grid dt {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.68rem;
   font-weight: 800;
 }
 
 .detail-grid dd {
-  margin: 2px 0 0;
-  font-size: 0.98rem;
+  margin: 1px 0 0;
+  font-size: 0.78rem;
   font-weight: 750;
   overflow-wrap: anywhere;
 }
 
 .activity-details {
-  margin-top: 14px;
+  margin-top: 8px;
   min-width: 0;
 }
 
 .mini-table-section {
   max-width: 100%;
-  margin-top: 12px;
+  margin-top: 8px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
 .mini-table-section h4 {
-  margin: 0 0 6px;
-  font-size: 0.92rem;
+  margin: 0 0 4px;
+  font-size: 0.78rem;
 }
 
 table {
@@ -875,14 +1009,14 @@ table {
   min-width: 100%;
   max-width: none;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: 0.7rem;
 }
 
 th,
 td {
   max-width: 180px;
   border-bottom: 1px solid var(--line);
-  padding: 6px;
+  padding: 3px 4px;
   text-align: left;
   vertical-align: top;
   overflow-wrap: anywhere;
@@ -921,9 +1055,17 @@ th {
   .credential-form,
   .grid,
   .lookup-grid,
+  .setup-grid,
   .profile-layout,
   .profile-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .embedded-lookup {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding-left: 0;
+    padding-top: 10px;
   }
 
   .actions,
@@ -967,8 +1109,8 @@ th {
 
 @media (min-width: 1440px) {
   :root {
-    --panel-padding: 24px;
-    --card-padding: 18px;
+    --panel-padding: 20px;
+    --card-padding: 10px;
   }
 
   .shell,
@@ -990,12 +1132,10 @@ th {
     gap: 18px;
   }
 
-  .lookup-grid,
   .grid {
     gap: 24px;
   }
 
-  .lookup-grid,
   .grid {
     grid-template-columns: minmax(560px, 1fr) minmax(360px, 0.55fr);
   }
@@ -1009,12 +1149,12 @@ th {
   }
 
   .activity-list {
-    gap: 16px;
+    gap: 8px;
   }
 
   .detail-grid {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 6px;
   }
 
 }
