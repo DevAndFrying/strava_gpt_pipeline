@@ -22,10 +22,8 @@ const splitColumns = [
   "average_grade_adjusted_speed",
 ];
 
-const recentExpandDelayMs = 1000;
-const recentCollapseDelayMs = 4000;
-const recentCollapseThreshold = 50;
-const initialRecentLimit = 3;
+const recentActivityLimit = 5;
+const recentPollIntervalMs = 60_000;
 const actionCooldownMs = 900;
 const metersToFeet = (meters) => meters * 3.28084;
 const emptyProfileDraft = {
@@ -70,11 +68,32 @@ function getAuthorizationToast(searchParams) {
   };
 }
 
+function createRecentActivitySnapshot(activities) {
+  return JSON.stringify(
+    activities.map((activity) => ({
+      id: activity.id,
+      name: activity.name,
+      sport_type: activity.sport_type || activity.type,
+      start_date: activity.start_date,
+      start_date_local: activity.start_date_local,
+      distance: activity.distance,
+      moving_time: activity.moving_time,
+      total_elevation_gain: activity.total_elevation_gain,
+      average_speed: activity.average_speed,
+      average_heartrate: activity.average_heartrate,
+      kudos_count: activity.kudos_count,
+      achievement_count: activity.achievement_count,
+      pr_count: activity.pr_count,
+      total_photo_count: activity.total_photo_count,
+      photo_count: activity.photo_count,
+    })),
+  );
+}
+
 function App() {
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   const [limit, setLimit] = useState(10);
-  const [recentLimit, setRecentLimit] = useState(initialRecentLimit);
   const [splitUnits, setSplitUnits] = useState("miles");
   const [activityId, setActivityId] = useState("");
   const [clientId, setClientId] = useState("");
@@ -91,13 +110,10 @@ function App() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isDeletingProfile, setIsDeletingProfile] = useState(false);
-  const [isRecentExpanded, setIsRecentExpanded] = useState(true);
   const [pullingActivityId, setPullingActivityId] = useState("");
   const [profileDraft, setProfileDraft] = useState(emptyProfileDraft);
   const actionLocks = useRef(new Map());
-  const recentExpandTimer = useRef(null);
-  const recentCollapseTimer = useRef(null);
-  const recentPanelHasFocus = useRef(false);
+  const recentActivitiesSnapshot = useRef("");
   const toastTimer = useRef(null);
   const jsonCopiedTimer = useRef(null);
 
@@ -114,8 +130,6 @@ function App() {
 
   useEffect(() => {
     return () => {
-      clearTimeout(recentExpandTimer.current);
-      clearTimeout(recentCollapseTimer.current);
       clearTimeout(toastTimer.current);
       clearTimeout(jsonCopiedTimer.current);
     };
@@ -184,13 +198,62 @@ function App() {
   }, []);
 
   useEffect(() => {
-    loadRecentActivities({ limitOverride: initialRecentLimit, showFeedback: false });
-  }, []);
-
-  useEffect(() => {
     clearTimeout(jsonCopiedTimer.current);
     setIsJsonCopied(false);
   }, [jsonOutput]);
+
+  useEffect(() => {
+    let isDisposed = false;
+    let isRecentRequestInFlight = false;
+
+    async function refreshRecentActivities({ isInitial = false } = {}) {
+      if (isRecentRequestInFlight) {
+        return;
+      }
+
+      isRecentRequestInFlight = true;
+
+      if (isInitial) {
+        setIsLoadingRecent(true);
+      }
+
+      try {
+        const activities = await fetchActivities(recentActivityLimit);
+
+        if (isDisposed) {
+          return;
+        }
+
+        const nextSnapshot = createRecentActivitySnapshot(activities);
+
+        if (nextSnapshot !== recentActivitiesSnapshot.current) {
+          recentActivitiesSnapshot.current = nextSnapshot;
+          setRecentActivities(activities);
+        }
+      } catch (error) {
+        if (isInitial && !isDisposed) {
+          showToast({
+            message: error.message || "Could not fetch recent activities.",
+            tone: "error",
+          });
+        }
+      } finally {
+        isRecentRequestInFlight = false;
+
+        if (isInitial && !isDisposed) {
+          setIsLoadingRecent(false);
+        }
+      }
+    }
+
+    refreshRecentActivities({ isInitial: true });
+    const interval = window.setInterval(refreshRecentActivities, recentPollIntervalMs);
+
+    return () => {
+      isDisposed = true;
+      window.clearInterval(interval);
+    };
+  }, []);
 
   function showToast(nextToast, duration = 3200) {
     clearTimeout(toastTimer.current);
@@ -358,95 +421,6 @@ function App() {
         message: `Updated splits to ${value} for ${loadedActivities.length} activities.`,
         tone: "success",
       });
-    }
-  }
-
-  async function loadRecentActivities({
-    limitOverride = recentLimit,
-    showFeedback = true,
-  } = {}) {
-    if (!beginAction("load-recent")) return;
-
-    const requestedLimit = Math.min(Math.max(Number(limitOverride) || initialRecentLimit, 1), 50);
-
-    setIsLoadingRecent(true);
-    if (showFeedback) {
-      showToast(
-        { message: `Fetching last ${requestedLimit} activities...`, tone: "", isLoading: true },
-        null,
-      );
-    }
-
-    try {
-      const activities = await fetchActivities(requestedLimit);
-      clearTimeout(recentExpandTimer.current);
-      clearTimeout(recentCollapseTimer.current);
-      setIsRecentExpanded(true);
-      setRecentActivities(activities);
-      if (showFeedback) {
-        showToast({ message: `Loaded ${activities.length} recent activities.`, tone: "success" });
-      }
-    } catch (error) {
-      if (showFeedback) {
-        showToast({
-          message: error.message || "Could not fetch recent activities.",
-          tone: "error",
-        });
-      }
-    } finally {
-      setIsLoadingRecent(false);
-      endAction("load-recent");
-    }
-  }
-
-  async function handleLoadRecent() {
-    await loadRecentActivities();
-  }
-
-  function scheduleRecentExpand() {
-    if (recentActivities.length <= recentCollapseThreshold) {
-      setIsRecentExpanded(true);
-      return;
-    }
-
-    clearTimeout(recentCollapseTimer.current);
-    clearTimeout(recentExpandTimer.current);
-    recentExpandTimer.current = setTimeout(() => {
-      setIsRecentExpanded(true);
-    }, recentExpandDelayMs);
-  }
-
-  function scheduleRecentCollapse() {
-    clearTimeout(recentExpandTimer.current);
-    clearTimeout(recentCollapseTimer.current);
-
-    if (recentActivities.length <= recentCollapseThreshold || isLoadingRecent) {
-      setIsRecentExpanded(true);
-      return;
-    }
-
-    recentCollapseTimer.current = setTimeout(() => {
-      setIsRecentExpanded(false);
-    }, recentCollapseDelayMs);
-  }
-
-  function handleRecentBlur(event) {
-    if (event.currentTarget.contains(event.relatedTarget)) {
-      return;
-    }
-
-    recentPanelHasFocus.current = false;
-    scheduleRecentCollapse();
-  }
-
-  function handleRecentFocus() {
-    recentPanelHasFocus.current = true;
-    scheduleRecentExpand();
-  }
-
-  function handleRecentMouseLeave() {
-    if (!recentPanelHasFocus.current) {
-      scheduleRecentCollapse();
     }
   }
 
@@ -658,45 +632,14 @@ function App() {
       </section>
 
       <section className="lookup-grid" aria-label="Activity lookup tools">
-        <div
-          className="panel lookup-panel recent-panel"
-          onFocus={handleRecentFocus}
-          onBlur={handleRecentBlur}
-          onMouseEnter={scheduleRecentExpand}
-          onMouseLeave={handleRecentMouseLeave}
-        >
+        <div className="panel lookup-panel recent-panel">
           <div className="panel-heading">
             <h2>Recent activities</h2>
-            <form
-              className="recent-controls"
-              onSubmit={(event) => {
-                event.preventDefault();
-                handleLoadRecent();
-              }}
-            >
-              <label>
-                Count
-                <input
-                  value={recentLimit}
-                  onChange={(event) => setRecentLimit(event.target.value)}
-                  type="number"
-                  min="1"
-                  max="50"
-                />
-              </label>
-              <button type="submit" disabled={isLoadingRecent}>
-                {isLoadingRecent ? "Loading..." : "Load"}
-              </button>
-            </form>
           </div>
           <RecentActivityList
             activities={recentActivities}
             splitUnits={splitUnits}
-            isExpanded={
-              isRecentExpanded ||
-              recentActivities.length <= recentCollapseThreshold ||
-              isLoadingRecent
-            }
+            isLoading={isLoadingRecent}
             pullingActivityId={pullingActivityId}
             onPullActivity={handlePullActivity}
           />
@@ -1000,65 +943,62 @@ function JsonOutputCard({ jsonOutput, canCopy, isCopied, onCopy }) {
 function RecentActivityList({
   activities,
   splitUnits,
-  isExpanded,
+  isLoading,
   pullingActivityId,
   onPullActivity,
 }) {
   if (activities.length === 0) {
-    return <p className="empty-state">No recent activities loaded yet.</p>;
+    return (
+      <p className="empty-state">
+        {isLoading ? "Loading recent activities..." : "No recent activities loaded yet."}
+      </p>
+    );
   }
 
   return (
-    <div className={`recent-list-shell ${isExpanded ? "is-expanded" : "is-collapsed"}`}>
-      <p className="recent-collapsed-note" aria-hidden={isExpanded}>
-        {activities.length} recent activities hidden. Focus here for 1 second to expand.
-      </p>
-      <div className="recent-list-clip" aria-hidden={!isExpanded}>
-        <div className="recent-list">
-          {activities.map((activity) => {
-            const id = String(activity.id);
-            const distance = formatDistance(activity.distance, splitUnits);
-            const hasDistance = activity.distance !== null && activity.distance !== undefined;
-            const sport = activity.sport_type || activity.type || "Activity";
-            const startedAt = activity.start_date || activity.start_date_local;
-            const date = startedAt ? formatDate(startedAt) : null;
-            const elevationGain =
-              activity.total_elevation_gain === null ||
-              activity.total_elevation_gain === undefined
-                ? null
-                : Number(metersToFeet(activity.total_elevation_gain).toFixed(0));
+    <div className="recent-list-shell">
+      <div className="recent-list">
+        {activities.map((activity) => {
+          const id = String(activity.id);
+          const distance = formatDistance(activity.distance, splitUnits);
+          const hasDistance = activity.distance !== null && activity.distance !== undefined;
+          const sport = activity.sport_type || activity.type || "Activity";
+          const startedAt = activity.start_date || activity.start_date_local;
+          const date = startedAt ? formatDate(startedAt) : null;
+          const elevationGain =
+            activity.total_elevation_gain === null || activity.total_elevation_gain === undefined
+              ? null
+              : Number(metersToFeet(activity.total_elevation_gain).toFixed(0));
 
-            return (
-              <article className="recent-card" key={id}>
-                <div>
-                  <h3>{activity.name || "Untitled activity"}</h3>
-                  <div className="recent-primary-meta">
-                    <span>{sport}</span>
-                    {hasDistance && (
-                      <span>
-                        {distance.value} {distance.unit}
-                      </span>
-                    )}
-                  </div>
-                  <p>
-                    ID: {id}
-                    {date ? ` | ${date}` : ""}
-                    {elevationGain !== null ? ` | ${elevationGain} ft gain` : ""}
-                  </p>
+          return (
+            <article className="recent-card" key={id}>
+              <div>
+                <h3>{activity.name || "Untitled activity"}</h3>
+                <div className="recent-primary-meta">
+                  <span>{sport}</span>
+                  {hasDistance && (
+                    <span>
+                      {distance.value} {distance.unit}
+                    </span>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={pullingActivityId === id}
-                  tabIndex={isExpanded ? 0 : -1}
-                  onClick={() => onPullActivity(id)}
-                >
-                  {pullingActivityId === id ? "Pulling..." : "Pull"}
-                </button>
-              </article>
-            );
-          })}
-        </div>
+                <p>
+                  ID: {id}
+                  {date ? ` | ${date}` : ""}
+                  {elevationGain !== null ? ` | ${elevationGain} ft gain` : ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="secondary"
+                disabled={pullingActivityId === id}
+                onClick={() => onPullActivity(id)}
+              >
+                {pullingActivityId === id ? "Pulling..." : "Pull"}
+              </button>
+            </article>
+          );
+        })}
       </div>
     </div>
   );

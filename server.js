@@ -3,7 +3,8 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
 
-const port = Number(process.env.PORT || 5174);
+const defaultPort = 5174;
+const portFallbackAttempts = 20;
 const root = __dirname;
 const staticRoot = fsSync.existsSync(path.join(root, "dist")) ? path.join(root, "dist") : root;
 const isDevelopment = process.env.NODE_ENV === "development";
@@ -184,8 +185,14 @@ function getCredentialMode() {
 }
 
 function getRedirectUri(request) {
-  const host = request.headers.host || `localhost:${port}`;
+  const host = request.headers.host || `localhost:${getPreferredPort()}`;
   return `http://${host}/oauth/callback`;
+}
+
+function getPreferredPort() {
+  const configuredPort = Number(process.env.PORT || defaultPort);
+
+  return Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : defaultPort;
 }
 
 function redirectHome(response, params = {}) {
@@ -579,7 +586,7 @@ async function serveStatic(request, response) {
   }
 }
 
-async function createViteDevServer() {
+async function createViteDevServer(server) {
   if (!isDevelopment) {
     return null;
   }
@@ -589,7 +596,12 @@ async function createViteDevServer() {
   return createServer({
     appType: "spa",
     server: {
-      middlewareMode: true,
+      hmr: {
+        server,
+      },
+      middlewareMode: {
+        server,
+      },
     },
   });
 }
@@ -642,18 +654,59 @@ loadDotEnv();
 
 startServer();
 
+function listen(server, listenPort) {
+  return new Promise((resolve, reject) => {
+    function handleError(error) {
+      server.off("listening", handleListening);
+      reject(error);
+    }
+
+    function handleListening() {
+      server.off("error", handleError);
+      resolve();
+    }
+
+    server.once("error", handleError);
+    server.once("listening", handleListening);
+    server.listen(listenPort);
+  });
+}
+
+async function listenWithPortFallback(server, preferredPort) {
+  for (let attempt = 0; attempt < portFallbackAttempts; attempt += 1) {
+    const candidatePort = preferredPort + attempt;
+
+    try {
+      await listen(server, candidatePort);
+      return candidatePort;
+    } catch (error) {
+      const canRetry = error.code === "EADDRINUSE" || error.code === "EACCES";
+
+      if (!canRetry || attempt === portFallbackAttempts - 1) {
+        throw error;
+      }
+
+      console.warn(`Port ${candidatePort} is unavailable; trying ${candidatePort + 1}...`);
+    }
+  }
+
+  throw new Error(`Could not find an available port starting at ${preferredPort}.`);
+}
+
 async function startServer() {
-  const viteDevServer = await createViteDevServer();
+  let viteDevServer = null;
   const server = http.createServer((request, response) => {
     handleRequest(viteDevServer, request, response);
   });
 
-  server.listen(port, () => {
-    console.log(`Strava export running at http://localhost:${port}/`);
-    console.log(`Credential mode: ${getCredentialMode()}`);
+  viteDevServer = await createViteDevServer(server);
 
-    if (viteDevServer) {
-      console.log("React dev server: enabled on the same port");
-    }
-  });
+  const actualPort = await listenWithPortFallback(server, getPreferredPort());
+
+  console.log(`Strava export running at http://localhost:${actualPort}/`);
+  console.log(`Credential mode: ${getCredentialMode()}`);
+
+  if (viteDevServer) {
+    console.log("React dev server: enabled on the same port");
+  }
 }

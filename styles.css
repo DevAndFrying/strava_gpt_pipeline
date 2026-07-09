@@ -661,87 +661,27 @@ button.danger:hover:not(:disabled) {
   margin-bottom: 0;
 }
 
-.recent-controls {
-  display: grid;
-  grid-template-columns: 82px auto;
-  gap: 8px;
-  align-items: end;
-}
-
-.recent-controls label {
-  gap: 3px;
-  font-size: 0.78rem;
-}
-
-.recent-controls input {
-  min-height: 36px;
-  padding: 7px 9px;
-}
-
-.recent-controls button {
-  min-height: 36px;
-  padding: 7px 12px;
+.recent-panel .panel-heading {
+  margin-bottom: 8px;
 }
 
 .recent-list-shell {
-  display: grid;
-  grid-template-areas: "stack";
-}
-
-.recent-list-clip,
-.recent-collapsed-note {
-  grid-area: stack;
-  min-height: 0;
-  transition:
-    max-height 260ms ease,
-    opacity 180ms ease,
-    transform 220ms ease,
-    visibility 0ms linear 0ms;
-}
-
-.recent-list-clip {
-  max-height: 260px;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.recent-list-shell.is-collapsed .recent-list-clip {
-  max-height: 0;
-  opacity: 0;
-  transform: translateY(-4px);
-  visibility: hidden;
-  transition:
-    max-height 260ms ease,
-    opacity 160ms ease,
-    transform 220ms ease,
-    visibility 0ms linear 260ms;
-}
-
-.recent-list-shell.is-expanded .recent-collapsed-note {
-  max-height: 0;
-  opacity: 0;
-  transform: translateY(4px);
-  visibility: hidden;
-  transition:
-    max-height 180ms ease,
-    opacity 140ms ease,
-    transform 180ms ease,
-    visibility 0ms linear 180ms;
+  min-width: 0;
 }
 
 .recent-list {
   display: grid;
-  gap: 4px;
+  gap: 3px;
 }
 
 .recent-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
+  gap: 5px;
   align-items: center;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 5px 7px;
+  border-radius: 6px;
+  padding: 4px 6px;
   background: var(--surface-raised);
 }
 
@@ -751,7 +691,7 @@ button.danger:hover:not(:disabled) {
 
 .recent-card h3 {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   line-height: 1.15;
   overflow-wrap: anywhere;
 }
@@ -766,34 +706,25 @@ button.danger:hover:not(:disabled) {
 .recent-primary-meta span {
   border: 1px solid var(--pill-line);
   border-radius: 6px;
-  padding: 2px 5px;
+  padding: 1px 4px;
   background: var(--pill);
   color: var(--text);
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   font-weight: 850;
   line-height: 1.1;
 }
 
 .recent-card p,
-.empty-state,
-.recent-collapsed-note {
+.empty-state {
   color: var(--muted);
-  font-size: 0.74rem;
-}
-
-.recent-collapsed-note {
-  max-height: 48px;
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  padding: 10px;
-  background: var(--surface-raised);
-  transform: translateY(0);
+  font-size: 0.7rem;
+  line-height: 1.25;
 }
 
 .recent-card button {
-  min-height: 28px;
-  padding: 4px 8px;
-  font-size: 0.76rem;
+  min-height: 26px;
+  padding: 3px 7px;
+  font-size: 0.72rem;
 }
 
 .id-lookup {
@@ -1075,10 +1006,6 @@ th {
     flex-wrap: wrap;
   }
 
-  .recent-controls {
-    flex: 1 1 100%;
-  }
-
   .json-card-heading p {
     text-align: left;
   }
@@ -1144,10 +1071,6 @@ th {
     margin-top: 24px;
   }
 
-  .recent-list-clip {
-    max-height: 300px;
-  }
-
   .activity-list {
     gap: 8px;
   }
@@ -1180,7 +1103,6 @@ th {
   }
 
   .controls,
-  .recent-controls,
   .id-lookup {
     gap: 10px;
   }
@@ -1195,14 +1117,9 @@ th {
     justify-content: space-between;
   }
 
-  .recent-controls {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
   .button-link,
   .id-lookup button,
   .profile-actions button,
-  .recent-controls button,
   .recent-card button {
     width: 100%;
   }
