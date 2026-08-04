@@ -301,11 +301,14 @@ async function handleOAuthCallback(request, response) {
       ...existingAuth,
       athlete: data.athlete
         ? {
+            ...(existingAuth.athlete || {}),
             id: data.athlete.id,
             username: data.athlete.username,
             firstname: data.athlete.firstname,
             lastname: data.athlete.lastname,
             profile: data.athlete.profile || null,
+            show_run_equivalent_tracker:
+              existingAuth.athlete?.show_run_equivalent_tracker !== false,
           }
         : null,
       refresh_token: data.refresh_token,
@@ -399,6 +402,35 @@ async function handleProfile(request, response) {
     return;
   }
 
+  if (request.method === "PATCH") {
+    try {
+      const body = await readRequestJson(request);
+      const existingAuth = loadLocalAuth();
+
+      if (!existingAuth.athlete) {
+        sendJson(response, 400, {
+          message: "Connect or create a Strava profile before saving tracker preferences.",
+        });
+        return;
+      }
+
+      await saveLocalAuth({
+        ...existingAuth,
+        athlete: {
+          ...existingAuth.athlete,
+          show_run_equivalent_tracker: Boolean(body.show_run_equivalent_tracker),
+        },
+        updated_at: new Date().toISOString(),
+      });
+      sendJson(response, 200, getSettingsSummary());
+    } catch (error) {
+      sendJson(response, 400, {
+        message: error.message || "Could not save profile preferences.",
+      });
+    }
+    return;
+  }
+
   if (request.method !== "PUT") {
     sendJson(response, 405, {
       message: "Method not allowed.",
@@ -432,6 +464,8 @@ async function handleProfile(request, response) {
         lastname,
         username,
         profile: profile || null,
+        show_run_equivalent_tracker:
+          existingAthlete.show_run_equivalent_tracker !== false,
       },
       updated_at: new Date().toISOString(),
     });

@@ -277,6 +277,23 @@ export async function updateProfile(profile) {
   return data;
 }
 
+export async function updateProfilePreferences(preferences) {
+  const response = await fetch("/api/profile", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(preferences),
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throwResponseError(response, data);
+  }
+
+  return data;
+}
+
 export async function deleteProfile() {
   const response = await fetch("/api/profile", {
     method: "DELETE",

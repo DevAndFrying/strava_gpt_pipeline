@@ -8,6 +8,7 @@ import {
   fetchStravaSettings,
   saveStravaSettings,
   updateProfile,
+  updateProfilePreferences,
   deleteProfile,
   summarizeActivity,
 } from "./strava.js";
@@ -23,9 +24,20 @@ const splitColumns = [
 ];
 
 const recentActivityLimit = 5;
+const recentActivityFetchLimit = 50;
 const recentPollIntervalMs = 60_000;
 const actionCooldownMs = 900;
 const metersToFeet = (meters) => meters * 3.28084;
+const metersToMiles = (meters) => meters / 1609.344;
+const runningSportTypes = new Set(["Run", "TrailRun", "VirtualRun", "Walk", "Hike"]);
+const cyclingSportTypes = new Set([
+  "Ride",
+  "MountainBikeRide",
+  "GravelRide",
+  "VirtualRide",
+  "EBikeRide",
+  "EMountainBikeRide",
+]);
 const emptyProfileDraft = {
   firstname: "",
   lastname: "",
@@ -90,6 +102,52 @@ function createRecentActivitySnapshot(activities) {
   );
 }
 
+function getStartOfCurrentWeek() {
+  const start = new Date();
+  const daysSinceMonday = (start.getDay() + 6) % 7;
+
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - daysSinceMonday);
+  return start;
+}
+
+function getRunEquivalentMiles(activities) {
+  const weekStart = getStartOfCurrentWeek();
+
+  return activities.reduce((total, activity) => {
+    const startedAt = activity.start_date_local || activity.start_date;
+    const startDate = startedAt ? new Date(startedAt) : null;
+    const distance = Number(activity.distance);
+
+    if (
+      !startDate ||
+      Number.isNaN(startDate.getTime()) ||
+      startDate < weekStart ||
+      !Number.isFinite(distance) ||
+      distance <= 0
+    ) {
+      return total;
+    }
+
+    const distanceMiles = metersToMiles(distance);
+    const sport = activity.sport_type || activity.type;
+
+    if (runningSportTypes.has(sport)) {
+      return total + distanceMiles;
+    }
+
+    if (cyclingSportTypes.has(sport)) {
+      return total + distanceMiles / 3;
+    }
+
+    if (sport === "Swim") {
+      return total + distanceMiles * 4;
+    }
+
+    return total;
+  }, 0);
+}
+
 function App() {
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
@@ -109,8 +167,11 @@ function App() {
   const [isLoadingRecent, setIsLoadingRecent] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isSavingTrackerPreference, setIsSavingTrackerPreference] = useState(false);
   const [isDeletingProfile, setIsDeletingProfile] = useState(false);
   const [pullingActivityId, setPullingActivityId] = useState("");
+  const [activityHistory, setActivityHistory] = useState([]);
+  const [isRunEquivalentTrackerEnabled, setIsRunEquivalentTrackerEnabled] = useState(false);
   const [profileDraft, setProfileDraft] = useState(emptyProfileDraft);
   const actionLocks = useRef(new Map());
   const recentActivitiesSnapshot = useRef("");
@@ -122,6 +183,10 @@ function App() {
     [loadedActivities, splitUnits],
   );
   const jsonOutput = useMemo(() => JSON.stringify(summaries, null, 2), [summaries]);
+  const weeklyRunEquivalentMiles = useMemo(
+    () => getRunEquivalentMiles(activityHistory),
+    [activityHistory],
+  );
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -178,6 +243,9 @@ function App() {
       lastname: athlete?.lastname || "",
       profile: athlete?.profile || "",
     });
+    setIsRunEquivalentTrackerEnabled(
+      Boolean(athlete) && athlete.show_run_equivalent_tracker !== false,
+    );
   }, [settingsSummary?.athlete]);
 
   useEffect(() => {
@@ -218,18 +286,20 @@ function App() {
       }
 
       try {
-        const activities = await fetchActivities(recentActivityLimit);
+        const activities = await fetchActivities(recentActivityFetchLimit);
 
         if (isDisposed) {
           return;
         }
 
-        const nextSnapshot = createRecentActivitySnapshot(activities);
+        const recent = activities.slice(0, recentActivityLimit);
+        const nextSnapshot = createRecentActivitySnapshot(recent);
 
         if (nextSnapshot !== recentActivitiesSnapshot.current) {
           recentActivitiesSnapshot.current = nextSnapshot;
-          setRecentActivities(activities);
+          setRecentActivities(recent);
         }
+        setActivityHistory(activities);
       } catch (error) {
         if (isInitial && !isDisposed) {
           showToast({
@@ -513,6 +583,37 @@ function App() {
     }
   }
 
+  async function handleRunEquivalentTrackerChange(event) {
+    const isEnabled = event.target.checked;
+
+    if (!settingsSummary?.athlete || !beginAction("save-tracker-preference")) {
+      return;
+    }
+
+    setIsRunEquivalentTrackerEnabled(isEnabled);
+    setIsSavingTrackerPreference(true);
+
+    try {
+      const settings = await updateProfilePreferences({
+        show_run_equivalent_tracker: isEnabled,
+      });
+      setSettingsSummary(settings);
+      showToast({
+        message: `Run-equivalent tracker ${isEnabled ? "enabled" : "disabled"}.`,
+        tone: "success",
+      });
+    } catch (error) {
+      setIsRunEquivalentTrackerEnabled(!isEnabled);
+      showToast({
+        message: error.message || "Could not save the tracker preference.",
+        tone: "error",
+      });
+    } finally {
+      setIsSavingTrackerPreference(false);
+      endAction("save-tracker-preference");
+    }
+  }
+
   const isProfileRoute = currentPath === "/profile";
 
   return (
@@ -635,6 +736,26 @@ function App() {
         <div className="panel lookup-panel recent-panel">
           <div className="panel-heading">
             <h2>Recent activities</h2>
+            <div className="run-equivalent-control">
+              {isRunEquivalentTrackerEnabled && (
+                <div
+                  className="run-equivalent-total"
+                  title="Runs, walks, and hikes count 1:1; bike miles are divided by 3; swim miles are multiplied by 4."
+                >
+                  <strong>{weeklyRunEquivalentMiles.toFixed(1)}</strong>
+                  <span>run equivalent mi this week</span>
+                </div>
+              )}
+              <label className="run-equivalent-toggle">
+                <input
+                  type="checkbox"
+                  checked={isRunEquivalentTrackerEnabled}
+                  disabled={!settingsSummary?.athlete || isSavingTrackerPreference}
+                  onChange={handleRunEquivalentTrackerChange}
+                />
+                <span>Run-equivalent tracker</span>
+              </label>
+            </div>
           </div>
           <RecentActivityList
             activities={recentActivities}
@@ -965,6 +1086,12 @@ function RecentActivityList({
           const sport = activity.sport_type || activity.type || "Activity";
           const startedAt = activity.start_date || activity.start_date_local;
           const date = startedAt ? formatDate(startedAt) : null;
+          const localStartedAt = activity.start_date_local || activity.start_date;
+          const weekday = localStartedAt
+            ? new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(
+                new Date(localStartedAt),
+              )
+            : null;
           const elevationGain =
             activity.total_elevation_gain === null || activity.total_elevation_gain === undefined
               ? null
@@ -988,14 +1115,17 @@ function RecentActivityList({
                   {elevationGain !== null ? ` | ${elevationGain} ft gain` : ""}
                 </p>
               </div>
-              <button
-                type="button"
-                className="secondary"
-                disabled={pullingActivityId === id}
-                onClick={() => onPullActivity(id)}
-              >
-                {pullingActivityId === id ? "Pulling..." : "Pull"}
-              </button>
+              <div className="recent-card-actions">
+                {weekday && <span className="recent-weekday">{weekday}</span>}
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={pullingActivityId === id}
+                  onClick={() => onPullActivity(id)}
+                >
+                  {pullingActivityId === id ? "Pulling..." : "Pull"}
+                </button>
+              </div>
             </article>
           );
         })}
