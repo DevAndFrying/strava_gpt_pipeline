@@ -7,6 +7,23 @@ export function formatHeartRate(value) {
   return value === null || value === undefined ? null : Number(Number(value).toFixed(2));
 }
 
+export function formatTemperature(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const celsius = Number(value);
+
+  if (!Number.isFinite(celsius)) {
+    return null;
+  }
+
+  return {
+    celsius: Number(celsius.toFixed(1)),
+    fahrenheit: Number(((celsius * 9) / 5 + 32).toFixed(1)),
+  };
+}
+
 export function formatDistance(meters, units) {
   const distance =
     units === "kilometers" ? metersToKilometers(meters || 0) : metersToMiles(meters || 0);
@@ -82,11 +99,45 @@ function calculateStrideLength(activity) {
   };
 }
 
-export function formatDate(value) {
+export function formatDate(value, timeZone = null) {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
+    ...(timeZone ? { timeZone } : {}),
   }).format(new Date(value));
+}
+
+export function getStravaTimeZone(value) {
+  const timeZone = String(value || "").split(" ").pop();
+
+  if (!timeZone || !timeZone.includes("/")) {
+    return null;
+  }
+
+  try {
+    new Intl.DateTimeFormat("en", { timeZone }).format();
+    return timeZone;
+  } catch (error) {
+    return null;
+  }
+}
+
+function formatDateTimeWithOffset(value, utcOffsetSeconds) {
+  const date = new Date(value);
+  const offsetSeconds = Number(utcOffsetSeconds);
+
+  if (Number.isNaN(date.getTime()) || !Number.isFinite(offsetSeconds)) {
+    return null;
+  }
+
+  const roundedOffsetSeconds = Math.trunc(offsetSeconds);
+  const shiftedDate = new Date(date.getTime() + roundedOffsetSeconds * 1000);
+  const absoluteOffsetMinutes = Math.abs(Math.trunc(roundedOffsetSeconds / 60));
+  const offsetHours = String(Math.floor(absoluteOffsetMinutes / 60)).padStart(2, "0");
+  const offsetMinutes = String(absoluteOffsetMinutes % 60).padStart(2, "0");
+  const offsetSign = roundedOffsetSeconds >= 0 ? "+" : "-";
+
+  return `${shiftedDate.toISOString().replace(/Z$/, "")}${offsetSign}${offsetHours}:${offsetMinutes}`;
 }
 
 export function summarizeActivity(activity, splitUnits) {
@@ -127,7 +178,7 @@ export function summarizeActivity(activity, splitUnits) {
         distance_miles: Number(metersToMiles(effort.distance || 0).toFixed(2)),
         elapsed_time: formatDuration(effort.elapsed_time || 0),
         moving_time: formatDuration(effort.moving_time || 0),
-        started_at: effort.start_date_local || effort.start_date,
+        started_at: effort.start_date || effort.start_date_local,
       }))
     : [];
 
@@ -142,12 +193,27 @@ export function summarizeActivity(activity, splitUnits) {
       }))
     : [];
   const strideLength = calculateStrideLength(activity);
+  const averageTemperature = formatTemperature(activity.average_temp);
+  const apparentTemperature = formatTemperature(activity.weather?.apparent_temperature_celsius);
+  const rawRelativeHumidity = activity.weather?.relative_humidity_percent;
+  const relativeHumidity =
+    rawRelativeHumidity === null || rawRelativeHumidity === undefined
+      ? Number.NaN
+      : Number(rawRelativeHumidity);
+  const startedAt = activity.start_date || activity.start_date_local;
+  const timeZone = getStravaTimeZone(activity.timezone);
 
   return {
     id: activity.id,
     name: activity.name,
     sport_type: activity.sport_type || activity.type,
-    started_at: activity.start_date_local || activity.start_date,
+    started_at: startedAt,
+    started_at_utc: activity.start_date || null,
+    started_at_local:
+      formatDateTimeWithOffset(activity.start_date, activity.utc_offset) ||
+      activity.start_date_local ||
+      null,
+    timezone: timeZone,
     distance_miles: Number(metersToMiles(activity.distance || 0).toFixed(2)),
     moving_time: formatDuration(activity.moving_time || 0),
     elapsed_time: formatDuration(activity.elapsed_time || 0),
@@ -156,6 +222,20 @@ export function summarizeActivity(activity, splitUnits) {
     max_speed_mph: Number(((activity.max_speed || 0) * 2.23694).toFixed(2)),
     average_heartrate: formatHeartRate(activity.average_heartrate),
     max_heartrate: formatHeartRate(activity.max_heartrate),
+    average_temp_celsius: averageTemperature?.celsius ?? null,
+    average_temp_fahrenheit: averageTemperature?.fahrenheit ?? null,
+    average_temp_source: averageTemperature ? "Strava" : null,
+    weather_relative_humidity_percent:
+      Number.isFinite(relativeHumidity) && relativeHumidity >= 0 && relativeHumidity <= 100
+        ? Number(relativeHumidity.toFixed(0))
+        : null,
+    weather_apparent_temp_celsius: apparentTemperature?.celsius ?? null,
+    weather_apparent_temp_fahrenheit: apparentTemperature?.fahrenheit ?? null,
+    weather_at: activity.weather?.time || null,
+    weather_sample_offset_seconds: activity.weather?.sample_offset_seconds ?? null,
+    weather_source: activity.weather?.source || null,
+    weather_source_url: activity.weather?.source_url || null,
+    weather_is_modeled: activity.weather?.is_modeled ?? null,
     calories: activity.calories ?? null,
     perceived_exertion: activity.perceived_exertion ?? null,
     suffer_score: activity.suffer_score ?? null,

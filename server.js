@@ -14,6 +14,13 @@ const dataDir = process.env.DATA_DIR
 const localAuthPath = process.env.STRAVA_AUTH_FILE
   ? path.resolve(process.env.STRAVA_AUTH_FILE)
   : path.join(dataDir, ".strava-auth.json");
+const weatherForecastUrl = "https://api.open-meteo.com/v1/forecast";
+const weatherArchiveUrl = "https://archive-api.open-meteo.com/v1/archive";
+const weatherSourceUrl = "https://open-meteo.com/";
+const weatherRecentWindowMs = 90 * 24 * 60 * 60 * 1000;
+const weatherRequestTimeoutMs = 8_000;
+const weatherCacheLimit = 500;
+const weatherCache = new Map();
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -548,11 +555,157 @@ async function handleActivityDetail(request, response) {
     const data = await fetchStravaJson(`/activities/${id}`, {
       include_all_efforts: "true",
     });
+    const weather = await fetchActivityWeather(data).catch((error) => {
+      console.warn(`Could not enrich activity weather: ${error.message}`);
+      return null;
+    });
 
-    sendJson(response, 200, data);
+    sendJson(response, 200, {
+      ...data,
+      weather,
+    });
   } catch (error) {
     sendStravaError(response, error, "Could not fetch Strava activity detail.");
   }
+}
+
+function getActivityWeatherRequest(activity) {
+  const sportType = activity.sport_type || activity.type || "";
+  const startedAt = new Date(activity.start_date);
+  const [latitude, longitude] = Array.isArray(activity.start_latlng)
+    ? activity.start_latlng.map(Number)
+    : [];
+
+  if (
+    activity.trainer === true ||
+    sportType.includes("Virtual") ||
+    Number.isNaN(startedAt.getTime()) ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    return null;
+  }
+
+  const date = startedAt.toISOString().slice(0, 10);
+  const ageMs = Date.now() - startedAt.getTime();
+  const baseUrl = ageMs <= weatherRecentWindowMs ? weatherForecastUrl : weatherArchiveUrl;
+  const cacheKey = [baseUrl, latitude.toFixed(3), longitude.toFixed(3), date].join(":");
+  const url = new URL(baseUrl);
+
+  for (const [key, value] of Object.entries({
+    latitude,
+    longitude,
+    start_date: date,
+    end_date: date,
+    timezone: "UTC",
+    timeformat: "unixtime",
+    hourly: "relative_humidity_2m,apparent_temperature",
+  })) {
+    url.searchParams.set(key, String(value));
+  }
+
+  return {
+    cacheKey,
+    startedAt,
+    url,
+  };
+}
+
+async function fetchWeatherDay(cacheKey, url) {
+  if (weatherCache.has(cacheKey)) {
+    return weatherCache.get(cacheKey);
+  }
+
+  const weatherPromise = fetch(url, {
+    signal: AbortSignal.timeout(weatherRequestTimeoutMs),
+  })
+    .then(async (response) => {
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.reason || `Open-Meteo returned HTTP ${response.status}.`);
+      }
+
+      return data;
+    })
+    .catch((error) => {
+      weatherCache.delete(cacheKey);
+      throw error;
+    });
+
+  if (weatherCache.size >= weatherCacheLimit) {
+    weatherCache.delete(weatherCache.keys().next().value);
+  }
+
+  weatherCache.set(cacheKey, weatherPromise);
+  return weatherPromise;
+}
+
+async function fetchActivityWeather(activity) {
+  const request = getActivityWeatherRequest(activity);
+
+  if (!request) {
+    return null;
+  }
+
+  const data = await fetchWeatherDay(request.cacheKey, request.url);
+  const times = data.hourly?.time;
+  const humidities = data.hourly?.relative_humidity_2m;
+  const apparentTemperatures = data.hourly?.apparent_temperature;
+
+  if (!Array.isArray(times) || times.length === 0) {
+    return null;
+  }
+
+  const activityStartSeconds = request.startedAt.getTime() / 1000;
+  let nearestIndex = -1;
+  let nearestDifference = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < times.length; index += 1) {
+    const difference = Math.abs(Number(times[index]) - activityStartSeconds);
+
+    if (Number.isFinite(difference) && difference < nearestDifference) {
+      nearestIndex = index;
+      nearestDifference = difference;
+    }
+  }
+
+  if (nearestIndex === -1) {
+    return null;
+  }
+
+  const rawRelativeHumidity = humidities?.[nearestIndex];
+  const rawApparentTemperature = apparentTemperatures?.[nearestIndex];
+  const relativeHumidity =
+    rawRelativeHumidity === null || rawRelativeHumidity === undefined
+      ? Number.NaN
+      : Number(rawRelativeHumidity);
+  const apparentTemperature =
+    rawApparentTemperature === null || rawApparentTemperature === undefined
+      ? Number.NaN
+      : Number(rawApparentTemperature);
+  const hasRelativeHumidity =
+    Number.isFinite(relativeHumidity) && relativeHumidity >= 0 && relativeHumidity <= 100;
+
+  if (!hasRelativeHumidity && !Number.isFinite(apparentTemperature)) {
+    return null;
+  }
+
+  return {
+    source: "Open-Meteo",
+    source_url: weatherSourceUrl,
+    is_modeled: true,
+    time: new Date(Number(times[nearestIndex]) * 1000).toISOString(),
+    sample_offset_seconds: Math.round(Number(times[nearestIndex]) - activityStartSeconds),
+    relative_humidity_percent: hasRelativeHumidity ? relativeHumidity : null,
+    apparent_temperature_celsius: Number.isFinite(apparentTemperature)
+      ? apparentTemperature
+      : null,
+  };
 }
 
 async function fetchStravaJson(pathname, searchParams = {}) {

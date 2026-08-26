@@ -976,6 +976,16 @@ button.danger:hover:not(:disabled) {
   overflow-wrap: anywhere;
 }
 
+.weather-attribution {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.weather-attribution a {
+  color: inherit;
+}
+
 .activity-details {
   margin-top: 8px;
   min-width: 0;

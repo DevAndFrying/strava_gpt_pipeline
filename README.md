@@ -119,7 +119,19 @@ per activity, so a limit of `10` uses `11` Strava API requests.
 
 The split unit selector changes split distances and speeds between miles and
 kilometers without refetching. Detailed exports include every split returned by
-Strava for each activity.
+Strava for each activity. When Strava reports an activity's average temperature,
+the JSON export and activity cards show it in both Celsius and Fahrenheit and
+label it separately from modeled Open-Meteo conditions.
+For detailed outdoor activities with a start location, the server also requests
+hourly modeled weather from Open-Meteo and adds humidity and apparent ("feels
+like") temperature at the activity start. The request sends the activity's start
+coordinates and UTC date to Open-Meteo; it does not require an API key. Weather
+lookup failures do not prevent the Strava activity from loading.
+
+The export uses Strava's `start_date` as the canonical UTC timestamp. It also
+includes `started_at_local` with an explicit UTC offset and the activity's IANA
+`timezone`. Open-Meteo's nearest hourly sample remains in `weather_at`, with its
+difference from the exact activity start in `weather_sample_offset_seconds`.
 
 Use `Recent activities` to choose how many recent activity names and IDs to
 load. Each row has a `Pull` button that loads that specific activity's detailed

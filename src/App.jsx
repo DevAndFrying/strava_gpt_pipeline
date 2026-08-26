@@ -5,6 +5,8 @@ import {
   fetchActivityDetails,
   formatDistance,
   formatDate,
+  formatTemperature,
+  getStravaTimeZone,
   fetchStravaSettings,
   saveStravaSettings,
   updateProfile,
@@ -88,11 +90,14 @@ function createRecentActivitySnapshot(activities) {
       sport_type: activity.sport_type || activity.type,
       start_date: activity.start_date,
       start_date_local: activity.start_date_local,
+      timezone: activity.timezone,
+      utc_offset: activity.utc_offset,
       distance: activity.distance,
       moving_time: activity.moving_time,
       total_elevation_gain: activity.total_elevation_gain,
       average_speed: activity.average_speed,
       average_heartrate: activity.average_heartrate,
+      average_temp: activity.average_temp,
       kudos_count: activity.kudos_count,
       achievement_count: activity.achievement_count,
       pr_count: activity.pr_count,
@@ -115,7 +120,7 @@ function getRunEquivalentMiles(activities) {
   const weekStart = getStartOfCurrentWeek();
 
   return activities.reduce((total, activity) => {
-    const startedAt = activity.start_date_local || activity.start_date;
+    const startedAt = activity.start_date || activity.start_date_local;
     const startDate = startedAt ? new Date(startedAt) : null;
     const distance = Number(activity.distance);
 
@@ -1085,17 +1090,19 @@ function RecentActivityList({
           const hasDistance = activity.distance !== null && activity.distance !== undefined;
           const sport = activity.sport_type || activity.type || "Activity";
           const startedAt = activity.start_date || activity.start_date_local;
-          const date = startedAt ? formatDate(startedAt) : null;
-          const localStartedAt = activity.start_date_local || activity.start_date;
-          const weekday = localStartedAt
-            ? new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(
-                new Date(localStartedAt),
-              )
+          const timeZone = getStravaTimeZone(activity.timezone);
+          const date = startedAt ? formatDate(startedAt, timeZone) : null;
+          const weekday = startedAt
+            ? new Intl.DateTimeFormat(undefined, {
+                weekday: "long",
+                ...(timeZone ? { timeZone } : {}),
+              }).format(new Date(startedAt))
             : null;
           const elevationGain =
             activity.total_elevation_gain === null || activity.total_elevation_gain === undefined
               ? null
               : Number(metersToFeet(activity.total_elevation_gain).toFixed(0));
+          const averageTemperature = formatTemperature(activity.average_temp);
 
           return (
             <article className="recent-card" key={id}>
@@ -1113,6 +1120,9 @@ function RecentActivityList({
                   ID: {id}
                   {date ? ` | ${date}` : ""}
                   {elevationGain !== null ? ` | ${elevationGain} ft gain` : ""}
+                  {averageTemperature
+                    ? ` | ${averageTemperature.fahrenheit} °F / ${averageTemperature.celsius} °C`
+                    : ""}
                 </p>
               </div>
               <div className="recent-card-actions">
@@ -1153,9 +1163,14 @@ function ActivityList({ activities }) {
 }
 
 function ActivityCard({ activity }) {
+  const hasWeather =
+    (activity.weather_relative_humidity_percent !== null &&
+      activity.weather_relative_humidity_percent !== undefined) ||
+    (activity.weather_apparent_temp_celsius !== null &&
+      activity.weather_apparent_temp_celsius !== undefined);
   const metaFields = [
     activity.sport_type,
-    activity.started_at ? formatDate(activity.started_at) : null,
+    activity.started_at ? formatDate(activity.started_at, activity.timezone) : null,
     `${activity.distance_miles} mi`,
     activity.moving_time,
     `${activity.elevation_gain_feet} ft gain`,
@@ -1166,6 +1181,26 @@ function ActivityCard({ activity }) {
     ["Calories", activity.calories],
     ["Avg HR", activity.average_heartrate],
     ["Max HR", activity.max_heartrate],
+    [
+      "Strava avg temp",
+      activity.average_temp_celsius !== null && activity.average_temp_celsius !== undefined
+        ? `${activity.average_temp_fahrenheit} °F / ${activity.average_temp_celsius} °C`
+        : null,
+    ],
+    [
+      "Humidity at start",
+      activity.weather_relative_humidity_percent !== null &&
+      activity.weather_relative_humidity_percent !== undefined
+        ? `${activity.weather_relative_humidity_percent}%`
+        : null,
+    ],
+    [
+      "Feels like at start",
+      activity.weather_apparent_temp_celsius !== null &&
+      activity.weather_apparent_temp_celsius !== undefined
+        ? `${activity.weather_apparent_temp_fahrenheit} °F / ${activity.weather_apparent_temp_celsius} °C`
+        : null,
+    ],
     ["Cadence", activity.cadence],
     [
       "Stride length",
@@ -1201,6 +1236,16 @@ function ActivityCard({ activity }) {
             </div>
           ))}
         </dl>
+      )}
+
+      {hasWeather && activity.weather_source_url && (
+        <p className="weather-attribution">
+          Modeled weather near the activity start. Data by{" "}
+          <a href={activity.weather_source_url} target="_blank" rel="noreferrer">
+            {activity.weather_source || "Open-Meteo"}
+          </a>
+          .
+        </p>
       )}
 
       {(activity.splits.length > 0 ||
