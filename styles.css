@@ -570,6 +570,10 @@ button.danger:hover:not(:disabled) {
   font-size: 0.86rem;
 }
 
+.profile-connect {
+  margin-top: 12px;
+}
+
 .profile-page {
   max-width: 1040px;
   margin: 0 auto;

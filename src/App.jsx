@@ -235,10 +235,19 @@ function App() {
       return;
     }
 
-    if (!settingsSummary?.has_client_id || !settingsSummary?.has_client_secret) {
+    if (
+      !settingsSummary?.athlete ||
+      !settingsSummary?.has_client_id ||
+      !settingsSummary?.has_client_secret
+    ) {
       setIsCredentialModalOpen(true);
     }
-  }, [hasLoadedSettings, settingsSummary?.has_client_id, settingsSummary?.has_client_secret]);
+  }, [
+    hasLoadedSettings,
+    settingsSummary?.athlete,
+    settingsSummary?.has_client_id,
+    settingsSummary?.has_client_secret,
+  ]);
 
   useEffect(() => {
     const athlete = settingsSummary?.athlete;
@@ -656,6 +665,7 @@ function App() {
           onProfileDraftChange={handleProfileDraftChange}
           onProfileSubmit={handleProfileSubmit}
           onDeleteProfile={handleDeleteProfile}
+          onConnectStrava={() => setIsCredentialModalOpen(true)}
           onBack={(event) => handleNavClick(event, "/")}
         />
       ) : (
@@ -916,6 +926,7 @@ function ProfilePage({
   onProfileDraftChange,
   onProfileSubmit,
   onDeleteProfile,
+  onConnectStrava,
   onBack,
 }) {
   return (
@@ -932,7 +943,10 @@ function ProfilePage({
 
       <div className="profile-layout">
         <div className="panel">
-          <ProfileSummary settingsSummary={settingsSummary} />
+          <ProfileSummary
+            settingsSummary={settingsSummary}
+            onConnectStrava={onConnectStrava}
+          />
         </div>
 
         <form className="panel profile-form" onSubmit={onProfileSubmit}>
@@ -984,7 +998,7 @@ function ProfilePage({
   );
 }
 
-function ProfileSummary({ settingsSummary }) {
+function ProfileSummary({ settingsSummary, onConnectStrava }) {
   const athlete = settingsSummary?.athlete;
   const profileName = getProfileName(athlete);
 
@@ -1005,6 +1019,11 @@ function ProfileSummary({ settingsSummary }) {
             ? `Athlete ID ${athlete.id}${athlete.username ? ` - @${athlete.username}` : ""}`
             : "Connect Strava to show your athlete profile."}
         </p>
+        {!athlete && (
+          <button type="button" className="profile-connect" onClick={onConnectStrava}>
+            Connect Strava
+          </button>
+        )}
       </div>
     </div>
   );
