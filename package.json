@@ -4,6 +4,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
+    "test": "node --test",
     "start": "node server.js",
     "dev": "NODE_ENV=development node --watch server.js",
     "build": "vite build",

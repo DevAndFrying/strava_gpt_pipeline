@@ -21,6 +21,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
 COPY server.js ./
+COPY garmin.js ./
 
 RUN mkdir -p /data && chown -R node:node /app /data
 

@@ -1,7 +1,7 @@
 # Strava Activity Export SPA
 
-A tiny local SPA for fetching recent Strava activities and copying a compact
-JSON summary for ChatGPT.
+A tiny local SPA for fetching recent Strava activities, syncing Garmin Connect
+activities, comparing matching recordings, and copying JSON for ChatGPT.
 
 ## Run it
 
@@ -137,6 +137,74 @@ Use `Recent activities` to choose how many recent activity names and IDs to
 load. Each row has a `Pull` button that loads that specific activity's detailed
 stats into the cards and JSON output. You can also paste an activity ID into
 `Pull by activity ID` to load one activity directly.
+
+## Sync Garmin Connect and compare recordings
+
+1. Sign in to [Garmin Connect Personal API settings](https://connect.garmin.com/app/settings/personalApiToken)
+   and create a Personal API key. Garmin displays it only once.
+2. Click **Garmin Connect** in the top bar to open the modal. Paste the key into
+   **Garmin Personal API key** and click **Save Garmin key**.
+   The server verifies the key with Garmin before saving it.
+3. Choose **Activities to sync** (1–50) in the modal and click **Sync Garmin**. The app
+   imports recent activities and their detailed metrics. Click again to refresh them.
+4. Fetch Strava activities or pull a specific Strava activity to compare detailed
+   metrics. Until you do, comparisons use the recent Strava list already loaded.
+5. Open the Garmin modal and expand a matched activity to see Strava and Garmin
+   values and their differences. Close it with the close button, Escape, or a
+   click outside the dialog. Imported data remains available after closing it.
+
+This uses Garmin's official [Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api/)
+and the activity endpoints documented in Garmin's
+[reference client](https://github.com/garmin/connect-personal-api-python).
+The server exchanges the key for a short-lived bearer token and renews it as needed.
+It never returns either credential to the browser or stores it in localStorage.
+Instead of entering a key in the app, you can set this server environment variable:
+
+```dotenv
+GARMIN_PERSONAL_API_KEY=your_personal_api_key
+```
+
+The environment variable takes precedence; update it on the server to replace
+an environment-configured key. In Docker, pass it through the service's
+`environment:` block or a Compose env file, just like the Strava settings.
+
+The key is stored in `.garmin-auth.json` with owner-only permissions. Imported
+activities are stored separately in `.garmin-activities.json`, also with owner-only
+permissions. Both live under `DATA_DIR` (the project directory by default, `/data`
+in Docker), are ignored by git and Docker's build context, and survive restarts.
+Each sync updates existing Garmin activity IDs and retains previously imported
+activities. A failed sync preserves the last successful import.
+
+Matching uses the absolute difference between UTC activity **start times**, with
+an inclusive **300-second** window. Garmin GMT fields without a timezone are
+treated as UTC; local-only or invalid timestamps are left unmatched. Closest
+pairs are selected first, each entry is used once, and ties are resolved by ID.
+Matching is based on time, so the comparison also shows differences in names or
+sport types. These are candidate matches, useful for checking two recordings of
+the same workout; entries are not merged or deleted.
+
+The table compares distance and elevation in meters, durations in seconds,
+speeds in meters per second, heart rate in bpm, calories in kcal, power in watts,
+and temperature in Celsius. Numeric differences are **Garmin minus Strava**,
+rounded to three decimals. Missing values remain unavailable instead of becoming
+zero. Garmin's timer duration is not substituted for moving or elapsed time.
+The split-unit selector continues to control Strava splits; comparison units stay
+fixed so both sources can be compared directly.
+
+Once Garmin activities have been imported, **Copy JSON** exports an object with
+`strava`, `garmin`, and `comparisons` fields, including matched pairs, per-field
+differences, and unmatched IDs. Without imported Garmin activities, the existing
+Strava-only array format is preserved. Garmin-only exports also work.
+
+## Verify changes
+
+```bash
+npm test
+npm run build
+```
+
+Tests use mocked Garmin responses and temporary data directories; no real
+credentials or external API calls are needed.
 
 ## Token notes
 

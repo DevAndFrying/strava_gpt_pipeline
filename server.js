@@ -2,6 +2,7 @@ const http = require("node:http");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
+const { createGarminService } = require("./garmin.js");
 
 const defaultPort = 5174;
 const portFallbackAttempts = 20;
@@ -14,6 +15,7 @@ const dataDir = process.env.DATA_DIR
 const localAuthPath = process.env.STRAVA_AUTH_FILE
   ? path.resolve(process.env.STRAVA_AUTH_FILE)
   : path.join(dataDir, ".strava-auth.json");
+const garmin = createGarminService({ dataDir });
 const weatherForecastUrl = "https://api.open-meteo.com/v1/forecast";
 const weatherArchiveUrl = "https://archive-api.open-meteo.com/v1/archive";
 const weatherSourceUrl = "https://open-meteo.com/";
@@ -540,6 +542,33 @@ async function handleActivities(request, response) {
   }
 }
 
+async function handleGarmin(request, response) {
+  response.setHeader("Cache-Control", "no-store");
+  const pathname = new URL(request.url, "http://localhost").pathname;
+  try {
+    if (pathname === "/api/garmin" && request.method === "GET") {
+      sendJson(response, 200, await garmin.getState());
+    } else if (pathname === "/api/garmin/settings" && request.method === "POST") {
+      const body = await readRequestJson(request).catch((error) => {
+        throw Object.assign(error, { statusCode: 400 });
+      });
+      sendJson(response, 200, await garmin.saveKey(body?.api_key));
+    } else if (pathname === "/api/garmin/sync" && request.method === "POST") {
+      const body = await readRequestJson(request).catch((error) => {
+        throw Object.assign(error, { statusCode: 400 });
+      });
+      sendJson(response, 200, await garmin.sync(body?.limit ?? 10));
+    } else {
+      sendJson(response, 405, { message: "Method not allowed." });
+    }
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    sendJson(response, statusCode, {
+      message: error.statusCode ? error.message : "Could not save or sync Garmin data. Check the server data directory and try again.",
+    });
+  }
+}
+
 async function handleActivityDetail(request, response) {
   try {
     const requestUrl = new URL(request.url, `http://${request.headers.host}`);
@@ -753,7 +782,8 @@ async function serveStatic(request, response) {
       : requestUrl.pathname;
   const filePath = path.normalize(path.join(staticRoot, requestedPath));
 
-  if (!filePath.startsWith(staticRoot)) {
+  if (!filePath.startsWith(`${staticRoot}${path.sep}`) ||
+      requestedPath.split("/").some((part) => part.startsWith("."))) {
     response.writeHead(403);
     response.end("Forbidden");
     return;
@@ -794,6 +824,23 @@ async function createViteDevServer(server) {
 }
 
 function handleRequest(viteDevServer, request, response) {
+  // Credential and data files must also be blocked before Vite's dev middleware.
+  try {
+    const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+    if (pathname.split("/").some((part) => part.startsWith("."))) {
+      sendJson(response, 403, { message: "Forbidden" });
+      return;
+    }
+  } catch (error) {
+    sendJson(response, 400, { message: "Invalid request URL." });
+    return;
+  }
+
+  if (request.url === "/api/garmin" || request.url.startsWith("/api/garmin/") || request.url.startsWith("/api/garmin?")) {
+    handleGarmin(request, response);
+    return;
+  }
+
   if (request.url.startsWith("/api/profile")) {
     handleProfile(request, response);
     return;
@@ -837,9 +884,12 @@ function handleRequest(viteDevServer, request, response) {
   serveStatic(request, response);
 }
 
-loadDotEnv();
+if (require.main === module) {
+  loadDotEnv();
+  startServer();
+}
 
-startServer();
+module.exports = { handleRequest };
 
 function listen(server, listenPort) {
   return new Promise((resolve, reject) => {

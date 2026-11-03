@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import GarminModal from "./GarminModal.jsx";
+import { fetchGarminState } from "./garmin.js";
+import { compareActivities } from "./activity-comparison.mjs";
 import {
   fetchActivities,
   fetchActivityDetail,
@@ -164,8 +167,11 @@ function App() {
   const [settingsSummary, setSettingsSummary] = useState(null);
   const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
   const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
+  const [isGarminModalOpen, setIsGarminModalOpen] = useState(false);
   const [recentActivities, setRecentActivities] = useState([]);
   const [loadedActivities, setLoadedActivities] = useState([]);
+  const [garminState, setGarminState] = useState(null);
+  const [garminError, setGarminError] = useState("");
   const [toast, setToast] = useState(null);
   const [isJsonCopied, setIsJsonCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -187,7 +193,21 @@ function App() {
     () => loadedActivities.map((activity) => summarizeActivity(activity, splitUnits)),
     [loadedActivities, splitUnits],
   );
-  const jsonOutput = useMemo(() => JSON.stringify(summaries, null, 2), [summaries]);
+  const comparison = useMemo(
+    () => compareActivities(loadedActivities.length ? loadedActivities : activityHistory, garminState?.activities || []),
+    [loadedActivities, activityHistory, garminState],
+  );
+  const canCopyJson = summaries.length > 0 || comparison.garmin.length > 0;
+  const jsonOutput = useMemo(() => {
+    if (!comparison.garmin.length) return JSON.stringify(summaries, null, 2);
+    const { strava, garmin, ...comparisons } = comparison;
+    const source = loadedActivities.length ? loadedActivities : activityHistory;
+    return JSON.stringify({
+      strava: source.map((activity) => summarizeActivity(activity, splitUnits)),
+      garmin,
+      comparisons,
+    }, null, 2);
+  }, [summaries, comparison, loadedActivities, activityHistory, splitUnits]);
   const weeklyRunEquivalentMiles = useMemo(
     () => getRunEquivalentMiles(activityHistory),
     [activityHistory],
@@ -214,6 +234,12 @@ function App() {
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
+  }, []);
+
+  useEffect(() => {
+    fetchGarminState()
+      .then(setGarminState)
+      .catch((error) => setGarminError(error.message));
   }, []);
 
   useEffect(() => {
@@ -476,7 +502,7 @@ function App() {
   }
 
   async function handleCopy() {
-    if (summaries.length === 0) return;
+    if (!canCopyJson) return;
     if (!beginAction("copy-json")) return;
 
     try {
@@ -638,6 +664,14 @@ function App() {
             Home
           </a>
           <div className="top-actions">
+            <button
+              type="button"
+              className="secondary"
+              aria-haspopup="dialog"
+              onClick={() => setIsGarminModalOpen(true)}
+            >
+              Garmin Connect
+            </button>
             <ProfileNav
               settingsSummary={settingsSummary}
               isActive={isProfileRoute}
@@ -671,7 +705,7 @@ function App() {
       ) : (
         <>
           <section className="intro">
-            <p className="eyebrow">Strava API</p>
+            <p className="eyebrow">Strava & Garmin Connect</p>
             <h1>Activity export for ChatGPT</h1>
             <p>Fetch recent activities and copy a clean JSON summary you can send in a chat.</p>
           </section>
@@ -709,7 +743,7 @@ function App() {
               <button
                 type="button"
                 className="secondary"
-                disabled={summaries.length === 0}
+                disabled={!canCopyJson}
                 onClick={handleCopy}
               >
                 Copy JSON
@@ -791,7 +825,7 @@ function App() {
 
         <JsonOutputCard
           jsonOutput={jsonOutput}
-          canCopy={summaries.length > 0}
+          canCopy={canCopyJson}
           isCopied={isJsonCopied}
           onCopy={handleCopy}
         />
@@ -800,6 +834,21 @@ function App() {
       )}
       <Toast toast={toast} />
       </main>
+
+      <GarminModal
+        isOpen={isGarminModalOpen}
+        onClose={() => setIsGarminModalOpen(false)}
+        state={garminState}
+        onStateChange={(nextState) => {
+          setGarminState(nextState);
+          setGarminError("");
+        }}
+        error={garminError}
+        limit={limit}
+        onLimitChange={setLimit}
+        comparison={comparison}
+        comparisonScope={loadedActivities.length ? "loaded Strava activities" : "recent Strava activities"}
+      />
 
       {isCredentialModalOpen && (
         <StravaCredentialModal

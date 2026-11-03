@@ -1053,6 +1053,67 @@ th {
   user-select: text;
 }
 
+.garmin-modal {
+  width: min(1000px, calc(100% - 36px));
+  max-height: calc(100dvh - 36px);
+  color: var(--text);
+}
+
+.garmin-modal::backdrop {
+  background: rgba(17, 20, 22, 0.58);
+}
+
+.garmin-sync-limit {
+  max-width: 180px;
+  margin-top: 12px;
+}
+
+.garmin-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.garmin-controls label {
+  flex: 1 1 280px;
+}
+
+.garmin-error {
+  color: var(--error);
+}
+
+.garmin-comparison {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  min-width: 0;
+}
+
+.garmin-comparison summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.garmin-comparison caption {
+  text-align: left;
+  padding-bottom: 8px;
+}
+
+.garmin-different {
+  background: var(--subtle);
+}
+
+.garmin-imports {
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+
+.garmin-imports li + li {
+  margin-top: 8px;
+}
+
 @media (max-width: 860px) {
   .controls,
   .credential-form,

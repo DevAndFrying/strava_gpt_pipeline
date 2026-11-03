@@ -5,4 +5,8 @@ dist
 .env
 .strava-auth.json
 .strava-auth.json.tmp
+.garmin-auth.json
+.garmin-auth.json.tmp
+.garmin-activities.json
+.garmin-activities.json.tmp
 npm-debug.log
