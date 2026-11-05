@@ -558,13 +558,22 @@ async function handleGarmin(request, response) {
         throw Object.assign(error, { statusCode: 400 });
       });
       sendJson(response, 200, await garmin.sync(body?.limit ?? 10));
+    } else if (/^\/api\/garmin\/activities\/[^/]+\/fit$/.test(pathname) && request.method === "GET") {
+      const { content, filename } = await garmin.downloadFit(pathname.split("/")[4]);
+      response.writeHead(200, {
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Length": content.length,
+        "X-Content-Type-Options": "nosniff",
+      });
+      response.end(content);
     } else {
       sendJson(response, 405, { message: "Method not allowed." });
     }
   } catch (error) {
     const statusCode = error.statusCode || 500;
     sendJson(response, statusCode, {
-      message: error.statusCode ? error.message : "Could not save or sync Garmin data. Check the server data directory and try again.",
+      message: error.statusCode ? error.message : "Could not access Garmin data. Check the server data directory and try again.",
     });
   }
 }

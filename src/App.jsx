@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import GarminModal from "./GarminModal.jsx";
-import { fetchGarminState } from "./garmin.js";
+import { downloadGarminFit, fetchGarminState, syncGarmin } from "./garmin.js";
 import { compareActivities } from "./activity-comparison.mjs";
 import {
   fetchActivities,
@@ -172,6 +172,7 @@ function App() {
   const [loadedActivities, setLoadedActivities] = useState([]);
   const [garminState, setGarminState] = useState(null);
   const [garminError, setGarminError] = useState("");
+  const [isSyncingGarmin, setIsSyncingGarmin] = useState(false);
   const [toast, setToast] = useState(null);
   const [isJsonCopied, setIsJsonCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -181,6 +182,7 @@ function App() {
   const [isSavingTrackerPreference, setIsSavingTrackerPreference] = useState(false);
   const [isDeletingProfile, setIsDeletingProfile] = useState(false);
   const [pullingActivityId, setPullingActivityId] = useState("");
+  const [downloadingFitIds, setDownloadingFitIds] = useState(new Set());
   const [activityHistory, setActivityHistory] = useState([]);
   const [isRunEquivalentTrackerEnabled, setIsRunEquivalentTrackerEnabled] = useState(false);
   const [profileDraft, setProfileDraft] = useState(emptyProfileDraft);
@@ -198,6 +200,11 @@ function App() {
     [loadedActivities, activityHistory, garminState],
   );
   const canCopyJson = summaries.length > 0 || comparison.garmin.length > 0;
+  const recentGarminMatches = useMemo(
+    () => new Map(compareActivities(activityHistory, garminState?.activities || []).pairs
+      .map((pair) => [String(pair.strava_id), pair.garmin_id])),
+    [activityHistory, garminState],
+  );
   const jsonOutput = useMemo(() => {
     if (!comparison.garmin.length) return JSON.stringify(summaries, null, 2);
     const { strava, garmin, ...comparisons } = comparison;
@@ -237,9 +244,30 @@ function App() {
   }, []);
 
   useEffect(() => {
-    fetchGarminState()
-      .then(setGarminState)
-      .catch((error) => setGarminError(error.message));
+    let isDisposed = false;
+
+    async function refreshGarminActivities() {
+      setIsSyncingGarmin(true);
+      try {
+        const savedState = await fetchGarminState();
+        if (isDisposed) return;
+        setGarminState(savedState);
+        if (savedState.has_api_key) {
+          const nextState = await syncGarmin(10);
+          if (!isDisposed) setGarminState(nextState);
+        }
+      } catch (error) {
+        if (!isDisposed) {
+          setGarminError(error.message);
+          showToast({ message: `Garmin startup refresh failed: ${error.message}`, tone: "error" });
+        }
+      } finally {
+        if (!isDisposed) setIsSyncingGarmin(false);
+      }
+    }
+
+    refreshGarminActivities();
+    return () => { isDisposed = true; };
   }, []);
 
   useEffect(() => {
@@ -570,6 +598,26 @@ function App() {
     }
   }
 
+  async function handleDownloadFit(garminId) {
+    const id = String(garminId);
+    const actionKey = `download-fit-${id}`;
+    if (!beginAction(actionKey)) return;
+    setDownloadingFitIds((current) => new Set(current).add(id));
+    try {
+      await downloadGarminFit(id);
+      showToast({ message: `Downloaded FIT file for Garmin activity ${id}.`, tone: "success" });
+    } catch (error) {
+      showToast({ message: error.message || "Could not download the FIT file.", tone: "error" });
+    } finally {
+      setDownloadingFitIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+      endAction(actionKey);
+    }
+  }
+
   function handleProfileDraftChange(field, value) {
     setProfileDraft((currentProfile) => ({
       ...currentProfile,
@@ -812,6 +860,11 @@ function App() {
             isLoading={isLoadingRecent}
             pullingActivityId={pullingActivityId}
             onPullActivity={handlePullActivity}
+            garminMatches={recentGarminMatches}
+            hasGarminKey={Boolean(garminState?.has_api_key)}
+            isSyncingGarmin={isSyncingGarmin}
+            downloadingFitIds={downloadingFitIds}
+            onDownloadFit={handleDownloadFit}
           />
         </div>
 
@@ -844,6 +897,7 @@ function App() {
           setGarminError("");
         }}
         error={garminError}
+        isSyncing={isSyncingGarmin}
         limit={limit}
         onLimitChange={setLimit}
         comparison={comparison}
@@ -1140,6 +1194,11 @@ function RecentActivityList({
   isLoading,
   pullingActivityId,
   onPullActivity,
+  garminMatches,
+  hasGarminKey,
+  isSyncingGarmin,
+  downloadingFitIds,
+  onDownloadFit,
 }) {
   if (activities.length === 0) {
     return (
@@ -1154,6 +1213,17 @@ function RecentActivityList({
       <div className="recent-list">
         {activities.map((activity) => {
           const id = String(activity.id);
+          const garminId = garminMatches.get(id);
+          const isDownloadingFit = downloadingFitIds.has(String(garminId));
+          const fitTitle = isDownloadingFit
+            ? "Downloading the FIT file from Garmin Connect..."
+            : isSyncingGarmin && garminId === undefined
+              ? "Syncing Garmin activities to find the FIT file..."
+              : !hasGarminKey
+                ? "Add a Personal API key in Garmin Connect to download FIT files."
+                : garminId === undefined
+                  ? "Sync Garmin Connect to find a matching activity."
+                  : "Download the original FIT file from Garmin Connect.";
           const distance = formatDistance(activity.distance, splitUnits);
           const hasDistance = activity.distance !== null && activity.distance !== undefined;
           const sport = activity.sport_type || activity.type || "Activity";
@@ -1195,14 +1265,27 @@ function RecentActivityList({
               </div>
               <div className="recent-card-actions">
                 {weekday && <span className="recent-weekday">{weekday}</span>}
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={pullingActivityId === id}
-                  onClick={() => onPullActivity(id)}
-                >
-                  {pullingActivityId === id ? "Pulling..." : "Pull"}
-                </button>
+                <div className="recent-card-buttons">
+                  <button
+                    type="button"
+                    className="secondary fit-download-button"
+                    title={fitTitle}
+                    aria-label={`Download Garmin FIT for ${activity.name || `activity ${id}`}`}
+                    aria-busy={isDownloadingFit}
+                    disabled={!hasGarminKey || garminId === undefined || isDownloadingFit}
+                    onClick={() => onDownloadFit(garminId)}
+                  >
+                    FIT
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={pullingActivityId === id}
+                    onClick={() => onPullActivity(id)}
+                  >
+                    {pullingActivityId === id ? "Pulling..." : "Pull"}
+                  </button>
+                </div>
               </div>
             </article>
           );

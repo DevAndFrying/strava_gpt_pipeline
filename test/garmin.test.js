@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { createGarminService } = require("../garmin.js");
+const { zipSync } = require("fflate");
 
 const token = (expires = Date.now() / 1000 + 3600) => `header.${Buffer.from(JSON.stringify({ exp: expires })).toString("base64url")}.signature`;
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
@@ -140,4 +141,68 @@ test("rejects simultaneous syncs", async (t) => {
   while (!finish) await new Promise((resolve) => setImmediate(resolve));
   finish();
   await first;
+});
+
+test("downloads the original FIT bytes from a ZIP using the Garmin ID and cached credentials", async (t) => {
+  const fit = Buffer.from([12, 32, 1, 0, 4, 0, 0, 0, 46, 70, 73, 84, 0, 255, 128, 1]);
+  let tokens = 0;
+  const { service, dataDir } = await fixture(t, async (url, options) => {
+    if (options.method === "POST") { tokens++; return new Response(token()); }
+    assert.equal(String(url), "https://personal.connectapi.garmin.com/download-service/files/activity/123");
+    assert.match(options.headers.Authorization, /^Bearer header\./);
+    assert.equal(options.headers.Accept, "application/zip");
+    return new Response(zipSync({ "nested/recording.FIT": fit, "notes.txt": Buffer.from("ignored") }));
+  }, { GARMIN_PERSONAL_API_KEY: "download-key" });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const download = await service.downloadFit("123");
+    assert.equal(download.filename, "garmin-123.fit");
+    assert.deepEqual(download.content, fit);
+  }
+  assert.equal(tokens, 1);
+  assert.deepEqual(await fs.readdir(dataDir), []);
+});
+
+test("FIT downloads renew rejected tokens and redact upstream errors", async (t) => {
+  const fit = Buffer.from([12, 32, 1, 0, 0, 0, 0, 0, 46, 70, 73, 84]);
+  let tokens = 0;
+  let downloads = 0;
+  let fail = false;
+  const { service } = await fixture(t, async (url, options) => {
+    if (options.method === "POST") { tokens++; return new Response(token()); }
+    if (fail) return new Response("secret download-key", { status: 403 });
+    downloads++;
+    return downloads === 1 ? new Response("expired", { status: 401 }) : new Response(zipSync({ "run.fit": fit }));
+  }, { GARMIN_PERSONAL_API_KEY: "download-key" });
+  assert.deepEqual((await service.downloadFit(123)).content, fit);
+  assert.equal(tokens, 2);
+  assert.equal(downloads, 2);
+  fail = true;
+  await assert.rejects(service.downloadFit(123), (error) => error.statusCode === 403 && !error.message.includes("download-key"));
+});
+
+test("FIT downloads validate IDs and require credentials before contacting Garmin", async (t) => {
+  const { service } = await fixture(t, () => assert.fail("no network expected"));
+  for (const id of ["", "0", "-1", "1.5", "../123", "123?secret", null, undefined]) {
+    await assert.rejects(service.downloadFit(id), { statusCode: 400 });
+  }
+  await assert.rejects(service.downloadFit(123), /Save a Garmin Connect Personal API key/);
+});
+
+test("FIT downloads report absent recordings and reject malformed archives or FIT contents", async (t) => {
+  let archive = zipSync({ "activity.tcx": Buffer.from("not a FIT recording") });
+  const { service } = await fixture(t, async (url, options) => {
+    if (options.method === "POST") return new Response(token());
+    return new Response(archive);
+  }, { GARMIN_PERSONAL_API_KEY: "download-key" });
+  await assert.rejects(service.downloadFit(123), (error) => error.statusCode === 404 && /no original FIT/.test(error.message));
+  for (const value of [
+    Buffer.alloc(0),
+    Buffer.from("not a ZIP"),
+    zipSync({ "run.fit": Buffer.from("not a FIT") }),
+    zipSync({ "run.fit": Buffer.alloc(12) }),
+    zipSync({ "one.fit": Buffer.alloc(12), "two.fit": Buffer.alloc(12) }),
+  ]) {
+    archive = value;
+    await assert.rejects(service.downloadFit(123), { statusCode: 502 });
+  }
 });

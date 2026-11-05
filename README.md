@@ -138,13 +138,25 @@ load. Each row has a `Pull` button that loads that specific activity's detailed
 stats into the cards and JSON output. You can also paste an activity ID into
 `Pull by activity ID` to load one activity directly.
 
+When the app opens, it refreshes recent Strava activities and automatically syncs
+up to 10 recent Garmin activities if a Garmin key is configured. Both refreshes
+run independently. Saved Garmin activities remain available if its sync fails.
+
+Each recent row also has a **FIT** button immediately left of **Pull**. After you
+configure Garmin Connect and matching activities sync, click **FIT** to download
+the original `.fit` recording. The server retrieves Garmin's activity ZIP and
+extracts the FIT file in memory. Rows without a synced Garmin match keep the
+button disabled; hover over it for setup guidance. Downloads use the recent
+activity matches even when a different activity is loaded in the detail cards.
+
 ## Sync Garmin Connect and compare recordings
 
 1. Sign in to [Garmin Connect Personal API settings](https://connect.garmin.com/app/settings/personalApiToken)
    and create a Personal API key. Garmin displays it only once.
 2. Click **Garmin Connect** in the top bar to open the modal. Paste the key into
    **Garmin Personal API key** and click **Save Garmin key**.
-   The server verifies the key with Garmin before saving it.
+   The server verifies the key with Garmin before saving it. Future app startups
+   automatically sync up to 10 recent Garmin activities.
 3. Choose **Activities to sync** (1–50) in the modal and click **Sync Garmin**. The app
    imports recent activities and their detailed metrics. Click again to refresh them.
 4. Fetch Strava activities or pull a specific Strava activity to compare detailed

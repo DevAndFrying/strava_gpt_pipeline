@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { Readable } = require("node:stream");
+const { zipSync } = require("fflate");
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "garmin-api-test-"));
 const originalDataDir = process.env.DATA_DIR;
@@ -27,7 +28,7 @@ function request(url, { method = "GET", body = "", vite = null } = {}) {
     const response = {
       setHeader(name, value) { headers[name.toLowerCase()] = value; },
       writeHead(status, extra = {}) { this.status = status; Object.assign(headers, extra); },
-      end(value = "") { resolve({ status: this.status, headers, body: String(value) }); },
+      end(value = "") { resolve({ status: this.status, headers, body: String(value), bytes: Buffer.from(value) }); },
     };
     try { handleRequest(vite, incoming, response); } catch (error) { reject(error); }
   });
@@ -67,6 +68,35 @@ test("Garmin API validates bodies, limits, and HTTP methods", async () => {
   }
   assert.equal((await request("/api/garmin/settings", { method: "POST", body: "null" })).status, 400);
   assert.equal((await request("/api/garmin/sync", { method: "POST", body: '{"limit":51}' })).status, 400);
+});
+
+test("Garmin FIT endpoint sends an intact binary attachment and handles validation and download errors", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+  const fit = Buffer.from([12, 32, 1, 0, 4, 0, 0, 0, 46, 70, 73, 84, 0, 255, 128, 1]);
+  let hasFit = true;
+  global.fetch = async (url, options) => {
+    if (options.method === "POST") {
+      return new Response(`header.${Buffer.from(JSON.stringify({ exp: Date.now() / 1000 + 3600 })).toString("base64url")}.signature`);
+    }
+    assert.equal(String(url), "https://personal.connectapi.garmin.com/download-service/files/activity/987");
+    return new Response(zipSync(hasFit ? { "987_ACTIVITY.fit": fit } : { "activity.tcx": Buffer.from("no FIT") }));
+  };
+  await request("/api/garmin/settings", { method: "POST", body: JSON.stringify({ api_key: "download-test-key" }) });
+  const download = await request("/api/garmin/activities/987/fit");
+  assert.equal(download.status, 200);
+  assert.deepEqual(download.bytes, fit);
+  assert.equal(download.headers["Content-Type"], "application/octet-stream");
+  assert.equal(download.headers["Content-Disposition"], 'attachment; filename="garmin-987.fit"');
+  assert.equal(download.headers["Content-Length"], fit.length);
+  assert.equal(download.headers["cache-control"], "no-store");
+  assert.equal((await request("/api/garmin/activities/987/fit", { method: "POST" })).status, 405);
+  assert.equal((await request("/api/garmin/activities/invalid/fit")).status, 400);
+  hasFit = false;
+  const missing = await request("/api/garmin/activities/987/fit");
+  assert.equal(missing.status, 404);
+  assert.match(JSON.parse(missing.body).message, /no original FIT/);
+  assert.equal(missing.headers["Content-Disposition"], undefined);
 });
 
 test("credential files cannot be served in production or through Vite development middleware", async () => {

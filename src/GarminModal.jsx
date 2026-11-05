@@ -8,12 +8,13 @@ function display(value, unit = "") {
   return `${rendered}${unit ? ` ${unit}` : ""}`;
 }
 
-export default function GarminModal({ isOpen, onClose, state, onStateChange, limit, onLimitChange, comparison, comparisonScope, error }) {
+export default function GarminModal({ isOpen, onClose, state, onStateChange, limit, onLimitChange, comparison, comparisonScope, error, isSyncing = false }) {
   const dialogRef = useRef(null);
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [actionError, setActionError] = useState("");
+  const isWorking = busy || isSyncing;
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -32,7 +33,7 @@ export default function GarminModal({ isOpen, onClose, state, onStateChange, lim
   }, [isOpen]);
 
   async function run(action) {
-    if (busy) return;
+    if (isWorking) return;
     setBusy(true);
     setMessage("");
     setActionError("");
@@ -97,15 +98,15 @@ export default function GarminModal({ isOpen, onClose, state, onStateChange, lim
             autoComplete="off"
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
-            disabled={busy || state?.is_api_key_from_env}
+            disabled={isWorking || state?.is_api_key_from_env}
             placeholder={state?.has_api_key ? "Key configured; enter a new key to replace it" : "Paste your Personal API key"}
           />
         </label>
-        <button type="submit" className="secondary" disabled={busy || !apiKey.trim() || state?.is_api_key_from_env}>
+        <button type="submit" className="secondary" disabled={isWorking || !apiKey.trim() || state?.is_api_key_from_env}>
           Save Garmin key
         </button>
-        <button type="button" disabled={busy || !state?.has_api_key} onClick={handleSync}>
-          {busy ? "Working..." : "Sync Garmin"}
+        <button type="button" disabled={isWorking || !state?.has_api_key} onClick={handleSync}>
+          {isWorking ? "Working..." : "Sync Garmin"}
         </button>
       </form>
       <div className="garmin-sync-limit">
@@ -118,7 +119,7 @@ export default function GarminModal({ isOpen, onClose, state, onStateChange, lim
             step="1"
             value={limit}
             onChange={(event) => onLimitChange(event.target.value)}
-            disabled={busy}
+            disabled={isWorking}
           />
         </label>
       </div>
@@ -129,7 +130,7 @@ export default function GarminModal({ isOpen, onClose, state, onStateChange, lim
       </p>
       {(actionError || error) && <p className="garmin-error" role="alert">{actionError || error}</p>}
       {message && <p role="status">{message}</p>}
-      {busy && <p role="status">Contacting Garmin and loading activity details...</p>}
+      {isWorking && <p role="status">Contacting Garmin and loading activity details...</p>}
       <p className="note">
         Matches use UTC start times within five minutes (including exactly five minutes).
         The closest pair is matched first; each entry is used once. Differences are Garmin minus Strava.

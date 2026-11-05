@@ -1,8 +1,10 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { unzipSync } = require("fflate");
 
 const baseUrl = "https://personal.connectapi.garmin.com";
 const tokenPath = "/personalapitoken-service/personal-api/personal-api-key/token";
+const maxDownloadBytes = 64 * 1024 * 1024;
 
 function apiError(message, statusCode = 502) {
   return Object.assign(new Error(message), { statusCode });
@@ -79,16 +81,21 @@ function createGarminService({ dataDir, fetchImpl = (...args) => fetch(...args),
     return token;
   }
 
-  async function getJson(pathname, key, params = {}) {
+  async function getResponse(pathname, key, params = {}, accept = "application/json") {
     const url = new URL(pathname, baseUrl);
     for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
     let token = await obtainToken(key);
-    let response = await request(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    let response = await request(url, { headers: { Authorization: `Bearer ${token}`, Accept: accept } });
     if (response.status === 401) {
       token = await obtainToken(key, true);
-      response = await request(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+      response = await request(url, { headers: { Authorization: `Bearer ${token}`, Accept: accept } });
     }
     checkResponse(response);
+    return response;
+  }
+
+  async function getJson(pathname, key, params = {}) {
+    const response = await getResponse(pathname, key, params);
     try {
       return await response.json();
     } catch (error) {
@@ -167,7 +174,39 @@ function createGarminService({ dataDir, fetchImpl = (...args) => fetch(...args),
     }
   }
 
-  return { getState, saveKey, sync };
+  async function downloadFit(activityId) {
+    const id = String(activityId ?? "");
+    if (!/^[1-9]\d*$/.test(id)) throw apiError("Garmin activity ID must be a positive integer.", 400);
+    const key = await getKey();
+    if (!key) throw apiError("Save a Garmin Connect Personal API key before downloading FIT files.", 400);
+    const response = await getResponse(`/download-service/files/activity/${id}`, key, {}, "application/zip");
+    let content;
+    try {
+      if (Number(response.headers.get("content-length")) > maxDownloadBytes) throw new Error("Download too large");
+      content = Buffer.from(await response.arrayBuffer());
+      if (content.length > maxDownloadBytes) throw new Error("Download too large");
+      // Personal API downloads are ZIP archives. Extract in memory, without writing upstream paths.
+      let fitCount = 0;
+      const files = unzipSync(content, {
+        filter: (file) => {
+          if (!/\.fit$/i.test(file.name)) return false;
+          if (++fitCount > 1) throw new Error("Unexpected number of FIT files");
+          if (file.originalSize > maxDownloadBytes) throw new Error("FIT file too large");
+          return true;
+        },
+      });
+      const fits = Object.values(files);
+      if (fits.length === 0) throw apiError("This Garmin activity has no original FIT file available.", 404);
+      content = Buffer.from(fits[0]);
+      if (content.length < 12 || content.toString("ascii", 8, 12) !== ".FIT") throw new Error("Invalid FIT file");
+    } catch (error) {
+      if (error.statusCode) throw error;
+      throw apiError("Could not read the FIT file from Garmin's activity download.");
+    }
+    return { content, filename: `garmin-${id}.fit` };
+  }
+
+  return { getState, saveKey, sync, downloadFit };
 }
 
 module.exports = { createGarminService };

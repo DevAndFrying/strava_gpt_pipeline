@@ -781,6 +781,22 @@ button.danger:hover:not(:disabled) {
   align-items: center;
 }
 
+.recent-card-buttons {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.recent-card-buttons button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.recent-card .fit-download-button:disabled {
+  opacity: 1;
+  color: var(--muted);
+}
+
 .recent-weekday {
   min-width: 5.5rem;
   color: var(--muted);
