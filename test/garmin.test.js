@@ -150,7 +150,7 @@ test("downloads the original FIT bytes from a ZIP using the Garmin ID and cached
     if (options.method === "POST") { tokens++; return new Response(token()); }
     assert.equal(String(url), "https://personal.connectapi.garmin.com/download-service/files/activity/123");
     assert.match(options.headers.Authorization, /^Bearer header\./);
-    assert.equal(options.headers.Accept, "application/zip");
+    assert.equal(options.headers.Accept, "application/zip, application/x-zip-compressed, application/octet-stream");
     return new Response(zipSync({ "nested/recording.FIT": fit, "notes.txt": Buffer.from("ignored") }));
   }, { GARMIN_PERSONAL_API_KEY: "download-key" });
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -178,6 +178,27 @@ test("FIT downloads renew rejected tokens and redact upstream errors", async (t)
   assert.equal(downloads, 2);
   fail = true;
   await assert.rejects(service.downloadFit(123), (error) => error.statusCode === 403 && !error.message.includes("download-key"));
+});
+
+test("FIT downloads negotiate Garmin's binary content types, including after token renewal", async (t) => {
+  const fit = Buffer.from([12, 32, 1, 0, 0, 0, 0, 0, 46, 70, 73, 84]);
+  for (const contentType of ["application/zip", "application/x-zip-compressed", "application/octet-stream"]) {
+    await t.test(contentType, async (t) => {
+      let tokens = 0;
+      let downloads = 0;
+      const { service } = await fixture(t, async (url, options) => {
+        if (options.method === "POST") { tokens++; return new Response(token()); }
+        downloads++;
+        const acceptedTypes = options.headers.Accept.split(",").map((type) => type.trim());
+        if (!acceptedTypes.includes(contentType)) return new Response("Not Acceptable", { status: 406 });
+        if (downloads === 1) return new Response("expired", { status: 401 });
+        return new Response(zipSync({ "activity.fit": fit }), { headers: { "Content-Type": contentType } });
+      }, { GARMIN_PERSONAL_API_KEY: "download-key" });
+      assert.deepEqual((await service.downloadFit(123)).content, fit);
+      assert.equal(tokens, 2);
+      assert.equal(downloads, 2);
+    });
+  }
 });
 
 test("FIT downloads validate IDs and require credentials before contacting Garmin", async (t) => {

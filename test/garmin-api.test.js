@@ -80,7 +80,12 @@ test("Garmin FIT endpoint sends an intact binary attachment and handles validati
       return new Response(`header.${Buffer.from(JSON.stringify({ exp: Date.now() / 1000 + 3600 })).toString("base64url")}.signature`);
     }
     assert.equal(String(url), "https://personal.connectapi.garmin.com/download-service/files/activity/987");
-    return new Response(zipSync(hasFit ? { "987_ACTIVITY.fit": fit } : { "activity.tcx": Buffer.from("no FIT") }));
+    if (!options.headers.Accept.split(",").map((type) => type.trim()).includes("application/octet-stream")) {
+      return new Response("Not Acceptable", { status: 406 });
+    }
+    return new Response(zipSync(hasFit ? { "987_ACTIVITY.fit": fit } : { "activity.tcx": Buffer.from("no FIT") }), {
+      headers: { "Content-Type": "application/octet-stream" },
+    });
   };
   await request("/api/garmin/settings", { method: "POST", body: JSON.stringify({ api_key: "download-test-key" }) });
   const download = await request("/api/garmin/activities/987/fit");

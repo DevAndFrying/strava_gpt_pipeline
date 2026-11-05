@@ -179,7 +179,8 @@ function createGarminService({ dataDir, fetchImpl = (...args) => fetch(...args),
     if (!/^[1-9]\d*$/.test(id)) throw apiError("Garmin activity ID must be a positive integer.", 400);
     const key = await getKey();
     if (!key) throw apiError("Save a Garmin Connect Personal API key before downloading FIT files.", 400);
-    const response = await getResponse(`/download-service/files/activity/${id}`, key, {}, "application/zip");
+    const response = await getResponse(`/download-service/files/activity/${id}`, key, {},
+      "application/zip, application/x-zip-compressed, application/octet-stream");
     let content;
     try {
       if (Number(response.headers.get("content-length")) > maxDownloadBytes) throw new Error("Download too large");
